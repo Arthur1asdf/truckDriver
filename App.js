@@ -1,11 +1,24 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import { useState, useRef } from 'react';
+import { Gyroscope } from 'expo-sensors';
+import { useState, useEffect, useRef } from 'react';
 import { Button, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function App() {
   const [facing, setFacing] = useState('back');
   const [permission, requestPermission] = useCameraPermissions();
+  const [gyroscopeData, setGyroscopeData] = useState({ x: 0, y: 0, z: 0 });
   const cameraRef = useRef(null);
+
+  useEffect(() => {
+    const subscription = Gyroscope.addListener(gyroscopeData => {
+      setGyroscopeData(gyroscopeData);
+    });
+    Gyroscope.setUpdateInterval(20);
+
+    return () => {
+      subscription.remove();
+    };
+  }, []);
 
   if (!permission) {
     // Camera permissions are still loading.
@@ -44,6 +57,17 @@ export default function App() {
             <Text style={styles.text}>Snapshot</Text>
           </TouchableOpacity>
         </View>
+        <View style={styles.gyroContainer}>
+          <Text style={styles.gyroText}>
+            x: {gyroscopeData.x.toFixed(2)}
+          </Text>
+          <Text style={styles.gyroText}>
+            y: {gyroscopeData.y.toFixed(2)}
+          </Text>
+          <Text style={styles.gyroText}>
+            z: {gyroscopeData.z.toFixed(2)}
+          </Text>
+        </View>
       </CameraView>
     </View>
   );
@@ -76,5 +100,17 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontWeight: 'bold',
     color: 'white',
+  },
+  gyroContainer: {
+    position: 'absolute',
+    top: 50,
+    left: 10,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    borderRadius: 5,
+    padding: 5,
+  },
+  gyroText: {
+    color: 'white',
+    fontSize: 16,
   },
 });
