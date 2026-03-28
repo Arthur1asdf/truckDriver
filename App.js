@@ -7,7 +7,7 @@ import { calculateRiskScore } from './riskScorer.js';
 const SENSOR_UPDATE_INTERVAL_MS = 100;
 const SCORE_CALCULATION_WINDOW_S = 2;
 const WINDOW_SIZE = (SCORE_CALCULATION_WINDOW_S * 1000) / SENSOR_UPDATE_INTERVAL_MS;
-
+const CAMERA_FRAME_INTERVAL_MS = 500; // Send frame every 500ms
 
 export default function App() {
   const [facing, setFacing] = useState('back');
@@ -22,12 +22,13 @@ export default function App() {
   const latestGyro = useRef({ x: 0, y: 0, z: 0 });
   const latestAccel = useRef({ x: 0, y: 0, z: 0 });
   const ws = useRef(null);
+  const cameraFrameIntervalRef = useRef(null);
 
   useEffect(() => {
     console.log('useEffect running, setting up WebSocket.');
     // --- WebSocket Connection ---
     // Replace 'YOUR_TAILSCALE_IP' with the actual Tailscale IP of your backend laptop.
-    ws.current = new WebSocket('ws://100.69.148.51:3000');
+    ws.current = new WebSocket('ws://100.108.70.119:3000');
     console.log('WebSocket created for:', ws.current.url);
 
     ws.current.onopen = () => {
@@ -59,6 +60,22 @@ export default function App() {
       latestAccel.current = accelData;
       setAccelerometerData(accelData);
     });
+
+    // --- Camera Frame Capture ---
+    cameraFrameIntervalRef.current = setInterval(async () => {
+      if (cameraRef.current && ws.current?.readyState === WebSocket.OPEN) {
+        try {
+          const photo = await cameraRef.current.takePictureAsync({ base64: true });
+          ws.current.send(JSON.stringify({
+            type: 'camera',
+            data: photo.base64,
+            timestamp: Date.now()
+          }));
+        } catch (error) {
+          console.error('Error capturing camera frame:', error);
+        }
+      }
+    }, CAMERA_FRAME_INTERVAL_MS);
 
     const processingInterval = setInterval(() => {
       sensorWindow.current.push({
