@@ -7,7 +7,7 @@ import { calculateRiskScore } from './riskScorer.js';
 const SENSOR_UPDATE_INTERVAL_MS = 100;
 const SCORE_CALCULATION_WINDOW_S = 2;
 const WINDOW_SIZE = (SCORE_CALCULATION_WINDOW_S * 1000) / SENSOR_UPDATE_INTERVAL_MS;
-const CAMERA_FRAME_INTERVAL_MS = 500; // Send frame every 500ms
+const CAMERA_FRAME_INTERVAL_MS = 1000; // Send frame every 500ms
 
 export default function App() {
   const [facing, setFacing] = useState('back');
@@ -15,6 +15,7 @@ export default function App() {
   const [gyroscopeData, setGyroscopeData] = useState({ x: 0, y: 0, z: 0 });
   const [accelerometerData, setAccelerometerData] = useState({ x: 0, y: 0, z: 0 });
   const [riskScore, setRiskScore] = useState(0);
+  const isCameraReady = useRef(false);
   const cameraRef = useRef(null);
 
   const sensorWindow = useRef([]);
@@ -28,7 +29,8 @@ export default function App() {
     console.log('useEffect running, setting up WebSocket.');
     // --- WebSocket Connection ---
     // Replace 'YOUR_TAILSCALE_IP' with the actual Tailscale IP of your backend laptop.
-    ws.current = new WebSocket('ws://100.108.70.119:3000');
+    // THIS MUST BE CHANGED FOR EACH IP ADDRESS!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    ws.current = new WebSocket('ws://100.69.148.51:3000');
     console.log('WebSocket created for:', ws.current.url);
 
     ws.current.onopen = () => {
@@ -63,7 +65,7 @@ export default function App() {
 
     // --- Camera Frame Capture ---
     cameraFrameIntervalRef.current = setInterval(async () => {
-      if (cameraRef.current && ws.current?.readyState === WebSocket.OPEN) {
+      if (cameraRef.current && isCameraReady.current && ws.current?.readyState === WebSocket.OPEN) {
         try {
           const photo = await cameraRef.current.takePictureAsync({ base64: true });
           ws.current.send(JSON.stringify({
@@ -130,7 +132,7 @@ export default function App() {
 
   return (
     <View style={styles.container}>
-      <CameraView style={styles.camera} facing={facing} ref={cameraRef}>
+      <CameraView style={styles.camera} facing={facing} ref={cameraRef} onCameraReady={() => isCameraReady.current = true}>
         <View style={styles.buttonContainer}>
           <TouchableOpacity style={styles.button} onPress={toggleCameraFacing}>
             <Text style={styles.text}>Flip</Text>
