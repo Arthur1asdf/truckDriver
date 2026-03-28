@@ -21,14 +21,38 @@ export default function App() {
   const lastRiskScore = useRef(0);
   const latestGyro = useRef({ x: 0, y: 0, z: 0 });
   const latestAccel = useRef({ x: 0, y: 0, z: 0 });
+  const ws = useRef(null);
 
   useEffect(() => {
+    console.log('useEffect running, setting up WebSocket.');
+    // --- WebSocket Connection ---
+    // Replace 'YOUR_TAILSCALE_IP' with the actual Tailscale IP of your backend laptop.
+    ws.current = new WebSocket('ws://100.69.148.51:3000');
+    console.log('WebSocket created for:', ws.current.url);
+
+    ws.current.onopen = () => {
+      console.log('WebSocket connection opened');
+    };
+
+    ws.current.onclose = () => {
+      console.log('WebSocket connection closed');
+    };
+
+    ws.current.onerror = (e) => {
+      console.error('WebSocket error:', e);
+    };
+
+    // --- Sensor Subscriptions ---
     Gyroscope.setUpdateInterval(SENSOR_UPDATE_INTERVAL_MS);
     Accelerometer.setUpdateInterval(SENSOR_UPDATE_INTERVAL_MS);
 
     const gyroSubscription = Gyroscope.addListener(gyroData => {
       latestGyro.current = gyroData;
       setGyroscopeData(gyroData);
+      // Send gyroscope data over WebSocket
+      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+        ws.current.send(JSON.stringify({ type: 'gyro', data: gyroData }));
+      }
     });
 
     const accelSubscription = Accelerometer.addListener(accelData => {
@@ -51,6 +75,10 @@ export default function App() {
     }, SENSOR_UPDATE_INTERVAL_MS);
 
     return () => {
+      console.log('Cleaning up: closing WebSocket and removing listeners.');
+      if (ws.current) {
+        ws.current.close();
+      }
       gyroSubscription.remove();
       accelSubscription.remove();
       clearInterval(processingInterval);
