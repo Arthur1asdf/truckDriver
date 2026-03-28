@@ -2,54 +2,58 @@ import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Gyroscope, Accelerometer } from 'expo-sensors';
 import { useState, useEffect, useRef } from 'react';
 import { Button, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { calculateRiskScore } from './riskScorer.js';
 
-const SPIKE_THRESHOLD = 0.5; // Threshold for detecting a spike
+const SENSOR_UPDATE_INTERVAL_MS = 100;
+const SCORE_CALCULATION_WINDOW_S = 2;
+const WINDOW_SIZE = (SCORE_CALCULATION_WINDOW_S * 1000) / SENSOR_UPDATE_INTERVAL_MS;
+
 
 export default function App() {
   const [facing, setFacing] = useState('back');
   const [permission, requestPermission] = useCameraPermissions();
   const [gyroscopeData, setGyroscopeData] = useState({ x: 0, y: 0, z: 0 });
   const [accelerometerData, setAccelerometerData] = useState({ x: 0, y: 0, z: 0 });
-  const [safeScore, setSafeScore] = useState(100);
+  const [riskScore, setRiskScore] = useState(0);
   const cameraRef = useRef(null);
-  const lastGyro = useRef(null);
-  const lastAccel = useRef(null);
+
+  const sensorWindow = useRef([]);
+  const lastRiskScore = useRef(0);
+  const latestGyro = useRef({ x: 0, y: 0, z: 0 });
+  const latestAccel = useRef({ x: 0, y: 0, z: 0 });
 
   useEffect(() => {
+    Gyroscope.setUpdateInterval(SENSOR_UPDATE_INTERVAL_MS);
+    Accelerometer.setUpdateInterval(SENSOR_UPDATE_INTERVAL_MS);
+
     const gyroSubscription = Gyroscope.addListener(gyroData => {
+      latestGyro.current = gyroData;
       setGyroscopeData(gyroData);
-      if (lastGyro.current) {
-        const mag1 = Math.sqrt(lastGyro.current.x ** 2 + lastGyro.current.y ** 2 + lastGyro.current.z ** 2);
-        const mag2 = Math.sqrt(gyroData.x ** 2 + gyroData.y ** 2 + gyroData.z ** 2);
-        if (Math.abs(mag2 - mag1) > SPIKE_THRESHOLD) {
-          setSafeScore(s => Math.max(0, s - 5));
-        }
-      }
-      lastGyro.current = gyroData;
     });
-    Gyroscope.setUpdateInterval(100);
 
     const accelSubscription = Accelerometer.addListener(accelData => {
+      latestAccel.current = accelData;
       setAccelerometerData(accelData);
-      if (lastAccel.current) {
-        const mag1 = Math.sqrt(lastAccel.current.x ** 2 + lastAccel.current.y ** 2 + lastAccel.current.z ** 2);
-        const mag2 = Math.sqrt(accelData.x ** 2 + accelData.y ** 2 + accelData.z ** 2);
-        if (Math.abs(mag2 - mag1) > SPIKE_THRESHOLD) {
-          setSafeScore(s => Math.max(0, s - 5));
-        }
-      }
-      lastAccel.current = accelData;
     });
-    Accelerometer.setUpdateInterval(100);
 
-    const scoreInterval = setInterval(() => {
-        setSafeScore(s => Math.min(100, s + 1));
-    }, 50);
+    const processingInterval = setInterval(() => {
+      sensorWindow.current.push({
+        gyro: latestGyro.current,
+        accel: latestAccel.current,
+      });
+
+      if (sensorWindow.current.length >= WINDOW_SIZE) {
+        const newRiskScore = calculateRiskScore(sensorWindow.current, lastRiskScore.current, SENSOR_UPDATE_INTERVAL_MS / 1000);
+        setRiskScore(newRiskScore);
+        lastRiskScore.current = newRiskScore;
+        sensorWindow.current = []; // Reset for the next window
+      }
+    }, SENSOR_UPDATE_INTERVAL_MS);
 
     return () => {
       gyroSubscription.remove();
       accelSubscription.remove();
-      clearInterval(scoreInterval);
+      clearInterval(processingInterval);
     };
   }, []);
 
@@ -91,7 +95,7 @@ export default function App() {
           </TouchableOpacity>
         </View>
         <View style={styles.sensorContainer}>
-          <Text style={styles.safeScore}>Safe Score: {safeScore.toFixed(0)}</Text>
+          <Text style={styles.riskScoreText}>Risk Score: {riskScore}</Text>
           <Text style={styles.sensorText}>Gyroscope:</Text>
           <Text style={styles.sensorText}>
             x: {gyroscopeData.x.toFixed(2)}
@@ -158,7 +162,7 @@ const styles = StyleSheet.create({
     color: 'white',
     fontSize: 12,
   },
-  safeScore: {
+  riskScoreText: {
     color: 'white',
     fontSize: 20,
     fontWeight: 'bold',
