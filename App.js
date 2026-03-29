@@ -1,13 +1,13 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import { Gyroscope, Accelerometer } from 'expo-sensors';
 import { useState, useEffect, useRef } from 'react';
-import { Button, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { AppState, Button, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { calculateRiskScore } from './riskScorer.js';
 
 const SENSOR_UPDATE_INTERVAL_MS = 100;
 const SCORE_CALCULATION_WINDOW_S = 2;
 const WINDOW_SIZE = (SCORE_CALCULATION_WINDOW_S * 1000) / SENSOR_UPDATE_INTERVAL_MS;
-const CAMERA_FRAME_INTERVAL_MS = 1000; // Send frame every 500ms
+const CAMERA_FRAME_INTERVAL_MS = 50; // Send frame every 500ms
 
 export default function App() {
   const facing = 'front'; // Always use the front camera
@@ -16,17 +16,26 @@ export default function App() {
   const [accelerometerData, setAccelerometerData] = useState({ x: 0, y: 0, z: 0 });
   const [riskScore, setRiskScore] = useState(0);
   const [modelPrediction, setModelPrediction] = useState('N/A');
+  const [drowsinessRisk, setDrowsinessRisk] = useState(0);
+  const [isFocused, setIsFocused] = useState(true); // Track if app is in foreground
   const isCameraReady = useRef(false);
   const cameraRef = useRef(null);
+  const isCapturing = useRef(false); // Lock to prevent concurrent captures
+  const currentDrowsinessRisk = useRef(0); // Ref to access latest drowsiness inside intervals
 
   const sensorWindow = useRef([]);
   const lastRiskScore = useRef(0);
+  const predictionHistory = useRef([]);
   const latestGyro = useRef({ x: 0, y: 0, z: 0 });
   const latestAccel = useRef({ x: 0, y: 0, z: 0 });
   const ws = useRef(null);
   const cameraFrameIntervalRef = useRef(null);
 
   useEffect(() => {
+    const appStateSubscription = AppState.addEventListener('change', nextAppState => {
+      setIsFocused(nextAppState === 'active');
+    });
+
     console.log('useEffect running, setting up WebSocket.');
     // --- WebSocket Connection ---
     // Replace 'YOUR_TAILSCALE_IP' with the actual Tailscale IP of your backend laptop.
@@ -41,11 +50,30 @@ export default function App() {
     ws.current.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type === 'inference' && data.predictions.length > 0) {
-          const { label, confidence } = data.predictions[0];
-          setModelPrediction(`${label} (${(confidence * 100).toFixed(1)}%)`);
-        } else if (data.type === 'inference') {
-          setModelPrediction('No detection');
+        if (data.type === 'inference') {
+          let currentLabel = 'none';
+          if (data.predictions.length > 0) {
+            const { label, confidence } = data.predictions[0];
+            setModelPrediction(`${label} (${(confidence * 100).toFixed(1)}%)`);
+            currentLabel = label;
+          } else {
+            setModelPrediction('No detection');
+          }
+
+          predictionHistory.current.push(currentLabel);
+          if (predictionHistory.current.length > 10) {
+            predictionHistory.current.shift();
+          }
+
+          const sleepyCount = predictionHistory.current.filter(l => l === 'sleepy').length;
+          const activeCount = predictionHistory.current.filter(l => l === 'active').length;
+          const totalValid = sleepyCount + activeCount;
+          const ratio = totalValid > 0 ? sleepyCount / totalValid : 0;
+          
+          // Exponential curve: goes from linear to aggressively steep using a power function
+          const expRisk = Math.round(Math.pow(ratio, 2.5) * 100);
+          setDrowsinessRisk(expRisk);
+          currentDrowsinessRisk.current = expRisk;
         }
       } catch (e) {
         console.error('Error parsing WebSocket message:', e);
@@ -83,7 +111,10 @@ export default function App() {
 
     // --- Camera Frame Capture ---
     cameraFrameIntervalRef.current = setInterval(async () => {
+      if (isCapturing.current) return; // Prevent overwhelming the camera if it's still capturing the last frame
+
       if (cameraRef.current && isCameraReady.current && ws.current?.readyState === WebSocket.OPEN) {
+        isCapturing.current = true;
         try {
           const photo = await cameraRef.current.takePictureAsync({ base64: false, quality: 0.3 }); // Compress to avoid choking the WebSocket
           const response = await fetch(photo.uri);
@@ -91,6 +122,8 @@ export default function App() {
           ws.current.send(buffer); // Send pure ArrayBuffer to avoid JSON stringification of RN Blobs
         } catch (error) {
           console.error('Error capturing camera frame:', error);
+        } finally {
+          isCapturing.current = false;
         }
       }
     }, CAMERA_FRAME_INTERVAL_MS);
@@ -101,11 +134,15 @@ export default function App() {
         accel: latestAccel.current,
       });
 
-      if (sensorWindow.current.length >= WINDOW_SIZE) {
-        const newRiskScore = calculateRiskScore(sensorWindow.current, lastRiskScore.current, SENSOR_UPDATE_INTERVAL_MS / 1000);
+      // Keep the window at the correct size (sliding window)
+      if (sensorWindow.current.length > WINDOW_SIZE) {
+        sensorWindow.current.shift();
+      }
+
+      if (sensorWindow.current.length === WINDOW_SIZE) {
+        const newRiskScore = calculateRiskScore(sensorWindow.current, lastRiskScore.current, currentDrowsinessRisk.current, SENSOR_UPDATE_INTERVAL_MS / 1000);
         setRiskScore(newRiskScore);
         lastRiskScore.current = newRiskScore;
-        sensorWindow.current = []; // Reset for the next window
       }
     }, SENSOR_UPDATE_INTERVAL_MS);
 
@@ -116,6 +153,7 @@ export default function App() {
       }
       gyroSubscription.remove();
       accelSubscription.remove();
+      appStateSubscription.remove();
       clearInterval(processingInterval);
     };
   }, []);
@@ -137,37 +175,40 @@ export default function App() {
 
   return (
     <View style={styles.container}>
-      <CameraView
-        style={styles.camera}
-        facing={facing} // Always use the front camera
-        ref={cameraRef}
-        onCameraReady={() => { isCameraReady.current = true; }}
-      >
-        <View style={styles.sensorContainer}>
-          <Text style={styles.riskScoreText}>Risk Score: {riskScore}</Text>
-          <Text style={styles.riskScoreText}>Status: {modelPrediction}</Text>
-          <Text style={styles.sensorText}>Gyroscope:</Text>
-          <Text style={styles.sensorText}>
-            x: {gyroscopeData.x.toFixed(2)}
-          </Text>
-          <Text style={styles.sensorText}>
-            y: {gyroscopeData.y.toFixed(2)}
-          </Text>
-          <Text style={styles.sensorText}>
-            z: {gyroscopeData.z.toFixed(2)}
-          </Text>
-          <Text style={styles.sensorText}>Accelerometer:</Text>
-          <Text style={styles.sensorText}>
-            x: {accelerometerData.x.toFixed(2)}
-          </Text>
-          <Text style={styles.sensorText}>
-            y: {accelerometerData.y.toFixed(2)}
-          </Text>
-          <Text style={styles.sensorText}>
-            z: {accelerometerData.z.toFixed(2)}
-          </Text>
-        </View>
-      </CameraView>
+      {isFocused && (
+        <CameraView
+          style={styles.camera}
+          facing={facing} // Always use the front camera
+          ref={cameraRef}
+          onCameraReady={() => { isCameraReady.current = true; }}
+        >
+          <View style={styles.sensorContainer}>
+            <Text style={styles.riskScoreText}>Risk Score: {riskScore}</Text>
+            <Text style={styles.riskScoreText}>Drowsiness Risk: {drowsinessRisk}</Text>
+            <Text style={styles.riskScoreText}>Status: {modelPrediction}</Text>
+            <Text style={styles.sensorText}>Gyroscope:</Text>
+            <Text style={styles.sensorText}>
+              x: {gyroscopeData.x.toFixed(2)}
+            </Text>
+            <Text style={styles.sensorText}>
+              y: {gyroscopeData.y.toFixed(2)}
+            </Text>
+            <Text style={styles.sensorText}>
+              z: {gyroscopeData.z.toFixed(2)}
+            </Text>
+            <Text style={styles.sensorText}>Accelerometer:</Text>
+            <Text style={styles.sensorText}>
+              x: {accelerometerData.x.toFixed(2)}
+            </Text>
+            <Text style={styles.sensorText}>
+              y: {accelerometerData.y.toFixed(2)}
+            </Text>
+            <Text style={styles.sensorText}>
+              z: {accelerometerData.z.toFixed(2)}
+            </Text>
+          </View>
+        </CameraView>
+      )}
     </View>
   );
 }
