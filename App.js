@@ -40,7 +40,7 @@ const DrivingUI = () => {
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
 
-  // --- UI & GEOMETRY SETUP (Moved up to prevent 'undefined' crashes) ---
+  // --- UI & GEOMETRY SETUP ---
   const size = width * 0.85;
   const strokeWidth = 35;
   const radius = (size - strokeWidth) / 2;
@@ -67,8 +67,11 @@ const DrivingUI = () => {
   const latestAccel = useRef({ x: 0, y: 0, z: 0 });
   const ws = useRef(null);
   const isComponentMounted = useRef(true); 
+  
+  // ADDED: Missing reference to fix the Property 'cameraFrameIntervalRef' doesn't exist error
+  const cameraFrameIntervalRef = useRef(null);
 
-  // --- Recursive Camera Loop (The "Well Implemented" Way) ---
+  // --- Recursive Camera Loop ---
   const streamFrames = async () => {
     if (!cameraRef.current || !isCameraReady.current || isCapturing.current || ws.current?.readyState !== WebSocket.OPEN) {
       setTimeout(streamFrames, 500);
@@ -84,7 +87,6 @@ const DrivingUI = () => {
         shutterSound: false,
       });
     
-      // Convert Base64 to Binary ArrayBuffer
       const binaryString = atob(photo.base64);
       const len = binaryString.length;
       const bytes = new Uint8Array(len);
@@ -104,16 +106,14 @@ const DrivingUI = () => {
   // --- ANIMATION ---
   const animatedValue = useRef(new Animated.Value(0)).current;
 
-  // Update animation when riskScore changes
   useEffect(() => {
     Animated.timing(animatedValue, {
       toValue: riskScore,
-      duration: 600, // Slightly longer for smoother transitions in driving
+      duration: 600, 
       useNativeDriver: true,
     }).start();
   }, [riskScore]);
 
-  // Listener for text display (Runs once)
   useEffect(() => {
     const listenerId = animatedValue.addListener(({ value }) => {
       setDisplayValue(Math.floor(value));
@@ -121,7 +121,6 @@ const DrivingUI = () => {
     return () => animatedValue.removeListener(listenerId);
   }, []);
 
-  // Map animated value to SVG stroke
   const strokeDashoffset = animatedValue.interpolate({
     inputRange: [0, 100],
     outputRange: [circumference, 0],
@@ -134,11 +133,8 @@ const DrivingUI = () => {
     accent: "#FF3B30",
   };
 
-  // --- BACKEND LOGIC (Left untouched as requested) ---
   useEffect(() => {
     isComponentMounted.current = true;
-    
-    // --- WebSocket Connection ---
     ws.current = new WebSocket("ws://100.108.70.119:3000");
 
     ws.current.onopen = () => {
