@@ -137,7 +137,7 @@ To train and test the RFC models, we sourced accelerometer and gyroscope data fr
 - **Digital CB Radio**: Proximity-based voice chat to combat driver isolation.
 - **Smart Rest-Stop Integration**: Automatically suggesting truck-friendly rest areas when the Risk Score rises.
 - **Predictive Analytics**: Optimal break-time suggestions based on historical fatigue data.
-- **Wearable Integration**: Incorporating heart rate variability (HRV) from smartwatches.
+- **Wearable Integration**: For physical haptic notifications for alerting drivers
 
 ## Team
 
