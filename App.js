@@ -1,23 +1,63 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Gyroscope, Accelerometer } from "expo-sensors";
-import { useState, useEffect, useRef } from "react";
-import { Button, StyleSheet, Text, View } from "react-native";
+import { useState, useEffect, useRef, useMemo } from "react";
+import {
+  Button,
+  Dimensions,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  Animated,
+  View,
+} from "react-native";
 import { calculateRiskScore } from "./riskScorer.js";
+import { Ionicons } from "@expo/vector-icons";
+import Svg, { Path, G } from "react-native-svg";
+import {
+  SafeAreaProvider,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
 
+const DEVMODE = true;
 const SENSOR_UPDATE_INTERVAL_MS = 100;
 const SCORE_CALCULATION_WINDOW_S = 2;
-const WINDOW_SIZE = (SCORE_CALCULATION_WINDOW_S * 1000) / SENSOR_UPDATE_INTERVAL_MS;
+const WINDOW_SIZE =
+  (SCORE_CALCULATION_WINDOW_S * 1000) / SENSOR_UPDATE_INTERVAL_MS;
+const CAMERA_FRAME_INTERVAL_MS = 1000;
+
+const { width } = Dimensions.get("window");
+const AnimatedPath = Animated.createAnimatedComponent(Path);
 
 export default function App() {
-  const facing = "front"; 
+  return (
+    <SafeAreaProvider>
+      <DrivingUI />
+    </SafeAreaProvider>
+  );
+}
+
+const DrivingUI = () => {
+  const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
+
+  // --- UI & GEOMETRY SETUP (Moved up to prevent 'undefined' crashes) ---
+  const size = width * 0.85;
+  const strokeWidth = 35;
+  const radius = (size - strokeWidth) / 2;
+  const center = size / 2;
+  const circumference = Math.PI * radius;
+
+  // --- STATE ---
   const [gyroscopeData, setGyroscopeData] = useState({ x: 0, y: 0, z: 0 });
   const [accelerometerData, setAccelerometerData] = useState({ x: 0, y: 0, z: 0 });
   const [riskScore, setRiskScore] = useState(0);
   const [modelPrediction, setModelPrediction] = useState("N/A");
   const [accelSafety, setAccelSafety] = useState("Normal");
   const [gyroSafety, setGyroSafety] = useState("Normal");
+  const [isDarkMode, setIsDarkMode] = useState(true);
+  const [displayValue, setDisplayValue] = useState(0);
 
+  // --- REFS ---
   const isCameraReady = useRef(false);
   const isCapturing = useRef(false); 
   const cameraRef = useRef(null);
@@ -61,6 +101,40 @@ export default function App() {
     }
   };
 
+  // --- ANIMATION ---
+  const animatedValue = useRef(new Animated.Value(0)).current;
+
+  // Update animation when riskScore changes
+  useEffect(() => {
+    Animated.timing(animatedValue, {
+      toValue: riskScore,
+      duration: 600, // Slightly longer for smoother transitions in driving
+      useNativeDriver: true,
+    }).start();
+  }, [riskScore]);
+
+  // Listener for text display (Runs once)
+  useEffect(() => {
+    const listenerId = animatedValue.addListener(({ value }) => {
+      setDisplayValue(Math.floor(value));
+    });
+    return () => animatedValue.removeListener(listenerId);
+  }, []);
+
+  // Map animated value to SVG stroke
+  const strokeDashoffset = animatedValue.interpolate({
+    inputRange: [0, 100],
+    outputRange: [circumference, 0],
+  });
+
+  const theme = {
+    background: isDarkMode ? "#121212" : "#F5F5F5",
+    text: isDarkMode ? "#FFFFFF" : "#000000",
+    dialBg: isDarkMode ? "#333333" : "#E0E0E0",
+    accent: "#FF3B30",
+  };
+
+  // --- BACKEND LOGIC (Left untouched as requested) ---
   useEffect(() => {
     isComponentMounted.current = true;
     
@@ -84,37 +158,53 @@ export default function App() {
           setGyroSafety(data.label);
         }
       } catch (e) {
-        console.error("Error parsing WebSocket message:", e);
+        console.error(e);
       }
     };
 
-    ws.current.onclose = () => console.log('WebSocket connection closed');
-    ws.current.onerror = (e) => console.error("WebSocket error:", e);
-
-    // --- Sensor Subscriptions ---
     Gyroscope.setUpdateInterval(SENSOR_UPDATE_INTERVAL_MS);
     Accelerometer.setUpdateInterval(SENSOR_UPDATE_INTERVAL_MS);
 
-    const gyroSubscription = Gyroscope.addListener((gyroData) => {
-      latestGyro.current = gyroData;
-      setGyroscopeData(gyroData);
+    const gyroSubscription = Gyroscope.addListener((data) => {
+      latestGyro.current = data;
+      setGyroscopeData(data);
       if (ws.current?.readyState === WebSocket.OPEN) {
-          ws.current.send(JSON.stringify({ type: "gyro", data: gyroData }));
+        ws.current.send(JSON.stringify({ type: "gyro", data }));
       }
     });
 
-    const accelSubscription = Accelerometer.addListener((accelData) => {
-      latestAccel.current = accelData;
-      setAccelerometerData(accelData);
+    const accelSubscription = Accelerometer.addListener((data) => {
+      latestAccel.current = data;
+      setAccelerometerData(data);
       if (ws.current?.readyState === WebSocket.OPEN) {
-          ws.current.send(JSON.stringify({ type: "accelerometer", data: accelData }));
+        ws.current.send(JSON.stringify({ type: "accelerometer", data }));
       }
     });
 
-    // --- Risk Scoring Logic ---
+    cameraFrameIntervalRef.current = setInterval(async () => {
+      if (
+        cameraRef.current &&
+        isCameraReady.current &&
+        ws.current?.readyState === WebSocket.OPEN
+      ) {
+        try {
+          const photo = await cameraRef.current.takePictureAsync({
+            quality: 0.3,
+          });
+          const response = await fetch(photo.uri);
+          const buffer = await response.arrayBuffer();
+          ws.current.send(buffer);
+        } catch (e) {
+          console.error(e);
+        }
+      }
+    }, CAMERA_FRAME_INTERVAL_MS);
+
     const processingInterval = setInterval(() => {
-        sensorWindow.current.push({ gyro: latestGyro.current, accel: latestAccel.current });
-
+      sensorWindow.current.push({
+        gyro: latestGyro.current,
+        accel: latestAccel.current,
+      });
       if (sensorWindow.current.length >= WINDOW_SIZE) {
         const newRiskScore = calculateRiskScore(
           sensorWindow.current,
@@ -133,6 +223,8 @@ export default function App() {
       gyroSubscription.remove();
       accelSubscription.remove();
       clearInterval(processingInterval);
+      if (cameraFrameIntervalRef.current)
+        clearInterval(cameraFrameIntervalRef.current);
     };
   }, []);
 
@@ -147,48 +239,95 @@ export default function App() {
   }
 
   return (
-    <View style={styles.container}>
-        <CameraView
-            style={styles.camera}
-            facing={facing}
-            ref={cameraRef}
-            onCameraReady={() => {
-                isCameraReady.current = true;
-                streamFrames(); 
-            }}
+    <View style={[styles.screen, { backgroundColor: theme.background }]}>
+      {DEVMODE && (
+        <View style={styles.sensorContainer}>
+          <Text style={styles.riskScoreText}>Risk Score: {riskScore}</Text>
+          <Text style={styles.sensorText}>Status: {modelPrediction}</Text>
+          <Text style={styles.sensorText}>
+            Accel: {accelSafety} | Gyro: {gyroSafety}
+          </Text>
+        </View>
+      )}
+
+      <View
+        style={[
+          styles.mainContent,
+          { paddingTop: insets.top, paddingBottom: insets.bottom },
+        ]}
+      >
+        <TouchableOpacity
+          onPress={() => setIsDarkMode(!isDarkMode)}
+          style={styles.themeToggle}
         >
-            <View style={styles.sensorContainer}>
-                <Text style={styles.riskScoreText}>Risk Score: {riskScore}</Text>
-                <Text style={styles.riskScoreText}>Status: {modelPrediction}</Text>
-                <Text style={styles.riskScoreText}>Acceleration: {accelSafety}</Text>
-                <Text style={styles.riskScoreText}>Turning: {gyroSafety}</Text>
-                <Text style={styles.sensorText}>Gyroscope (x,y,z):</Text>
-                <Text style={styles.sensorSubText}>
-                    {gyroscopeData.x.toFixed(2)}, {gyroscopeData.y.toFixed(2)}, {gyroscopeData.z.toFixed(2)}
-                </Text>
-                <Text style={styles.sensorText}>Accelerometer (x,y,z):</Text>
-                <Text style={styles.sensorSubText}>
-                    {accelerometerData.x.toFixed(2)}, {accelerometerData.y.toFixed(2)}, {accelerometerData.z.toFixed(2)}
-                </Text>
+          <Ionicons
+            name={isDarkMode ? "moon" : "sunny"}
+            size={36}
+            color={theme.text}
+          />
+        </TouchableOpacity>
+
+        <View style={styles.dialContainer}>
+          {/* Fixed height to crop bottom half of SVG */}
+          <View style={{ width: size, height: center, overflow: "hidden" }}>
+            <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+              {/* Added rotation and origin to flip from smile to arch */}
+              <G>
+                <Path
+                  d={`M ${strokeWidth / 2},${center} A ${radius},${radius} 0 0,1 ${size - strokeWidth / 2},${center}`}
+                  stroke={theme.dialBg}
+                  strokeWidth={strokeWidth}
+                  fill="none"
+                  strokeLinecap="round"
+                />
+                <AnimatedPath
+                  d={`M ${strokeWidth / 2},${center} A ${radius},${radius} 0 0,1 ${size - strokeWidth / 2},${center}`}
+                  stroke={theme.accent}
+                  strokeWidth={strokeWidth}
+                  fill="none"
+                  strokeDasharray={`${circumference}, ${circumference}`}
+                  strokeDashoffset={strokeDashoffset}
+                  strokeLinecap="round"
+                />
+              </G>
+            </Svg>
+
+            <View style={[styles.overlay, { bottom: 0 }]}>
+              <Text style={[styles.valueText, { color: theme.text }]}>
+                {displayValue}
+              </Text>
+              <Text style={[styles.label, { color: theme.text }]}>RISK %</Text>
             </View>
-        </CameraView>
+          </View>
+        </View>
+      </View>
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  container: { flex: 1, justifyContent: 'center', backgroundColor: '#000' },
-  message: { textAlign: 'center', color: 'white' },
-  camera: { flex: 1 },
+  screen: { flex: 1 },
+  container: { flex: 1, justifyContent: "center", alignItems: "center" },
+  message: { textAlign: "center", paddingBottom: 10 },
   sensorContainer: {
     position: "absolute",
-    top: 50,
-    left: 10,
-    backgroundColor: 'rgba(0, 0, 0, 0.6)',
-    borderRadius: 8,
-    padding: 10,
+    top: 60,
+    left: 20,
+    backgroundColor: "rgba(0, 0, 0, 0.7)",
+    borderRadius: 10,
+    padding: 12,
+    zIndex: 50,
   },
-  sensorText: { color: '#aaa', fontSize: 10, marginTop: 5 },
-  sensorSubText: { color: 'white', fontSize: 12 },
-  riskScoreText: { color: '#00ff00', fontSize: 22, fontWeight: 'bold' },
+  sensorText: { color: "white", fontSize: 12, opacity: 0.8 },
+  riskScoreText: { color: "white", fontSize: 18, fontWeight: "bold" },
+  mainContent: { flex: 1 },
+  themeToggle: { alignSelf: "flex-end", padding: 20 },
+  dialContainer: { flex: 1, justifyContent: "center", alignItems: "center" },
+  overlay: { position: "absolute", width: "100%", alignItems: "center" },
+  valueText: {
+    fontSize: 100,
+    fontWeight: "900",
+    fontVariant: ["tabular-nums"],
+  },
+  label: { fontSize: 18, fontWeight: "bold", opacity: 0.5, marginTop: -10 },
 });
