@@ -160,7 +160,7 @@ function App() {
       {/* Header */}
       <header style={{ padding: '15px 30px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#010409' }}>
         <h1 style={{ margin: 0, color: '#00BFFF', fontSize: '22px', fontWeight: '800', letterSpacing: '1px' }}>
-          TRUCK<span style={{color: '#e6edf3'}}>DRIVER</span> 
+          VIGIL<span style={{color: '#e6edf3'}}>EYES</span> 
           <span style={{color: '#8b949e', fontSize: '13px', fontWeight: '500', marginLeft: '15px'}}>Live Telemetry</span>
         </h1>
         <div style={{ fontSize: '13px', fontWeight: '600', display: 'flex', gap: '20px', alignItems: 'center' }}>
