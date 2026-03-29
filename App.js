@@ -7,34 +7,80 @@ import { calculateRiskScore } from './riskScorer.js';
 const SENSOR_UPDATE_INTERVAL_MS = 100;
 const SCORE_CALCULATION_WINDOW_S = 2;
 const WINDOW_SIZE = (SCORE_CALCULATION_WINDOW_S * 1000) / SENSOR_UPDATE_INTERVAL_MS;
-
+const CAMERA_FRAME_INTERVAL_MS = 1000; // Send frame every 500ms
 
 export default function App() {
-  const [facing, setFacing] = useState('back');
+  const facing = 'front'; // Always use the front camera
   const [permission, requestPermission] = useCameraPermissions();
   const [gyroscopeData, setGyroscopeData] = useState({ x: 0, y: 0, z: 0 });
   const [accelerometerData, setAccelerometerData] = useState({ x: 0, y: 0, z: 0 });
   const [riskScore, setRiskScore] = useState(0);
+  const isCameraReady = useRef(false);
   const cameraRef = useRef(null);
 
   const sensorWindow = useRef([]);
   const lastRiskScore = useRef(0);
   const latestGyro = useRef({ x: 0, y: 0, z: 0 });
   const latestAccel = useRef({ x: 0, y: 0, z: 0 });
+  const ws = useRef(null);
+  const cameraFrameIntervalRef = useRef(null);
 
   useEffect(() => {
+    console.log('useEffect running, setting up WebSocket.');
+    // --- WebSocket Connection ---
+    // Replace 'YOUR_TAILSCALE_IP' with the actual Tailscale IP of your backend laptop.
+    // THIS MUST BE CHANGED FOR EACH IP ADDRESS!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+    ws.current = new WebSocket('ws://100.69.148.51:3000');
+    console.log('WebSocket created for:', ws.current.url);
+
+    ws.current.onopen = () => {
+      console.log('WebSocket connection opened');
+    };
+
+    ws.current.onclose = () => {
+      console.log('WebSocket connection closed');
+    };
+
+    ws.current.onerror = (e) => {
+      console.error('WebSocket error:', e);
+    };
+
+    // --- Sensor Subscriptions ---
     Gyroscope.setUpdateInterval(SENSOR_UPDATE_INTERVAL_MS);
     Accelerometer.setUpdateInterval(SENSOR_UPDATE_INTERVAL_MS);
 
     const gyroSubscription = Gyroscope.addListener(gyroData => {
       latestGyro.current = gyroData;
       setGyroscopeData(gyroData);
+      // Send gyroscope data over WebSocket
+      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+        ws.current.send(JSON.stringify({ type: 'gyro', data: gyroData }));
+      }
     });
 
     const accelSubscription = Accelerometer.addListener(accelData => {
       latestAccel.current = accelData;
       setAccelerometerData(accelData);
+      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+        ws.current.send(JSON.stringify({ type: 'accelerometer', data: accelData }));
+      }
     });
+
+    // --- Camera Frame Capture ---
+    cameraFrameIntervalRef.current = setInterval(async () => {
+      if (cameraRef.current && isCameraReady.current && ws.current?.readyState === WebSocket.OPEN) {
+        try {
+          const photo = await cameraRef.current.takePictureAsync({ base64: true });
+          ws.current.send(JSON.stringify({
+            type: 'camera',
+            data: photo.base64,
+            timestamp: Date.now()
+          }));
+        } catch (error) {
+          console.error('Error capturing camera frame:', error);
+        }
+      }
+    }, CAMERA_FRAME_INTERVAL_MS);
 
     const processingInterval = setInterval(() => {
       sensorWindow.current.push({
@@ -51,6 +97,10 @@ export default function App() {
     }, SENSOR_UPDATE_INTERVAL_MS);
 
     return () => {
+      console.log('Cleaning up: closing WebSocket and removing listeners.');
+      if (ws.current) {
+        ws.current.close();
+      }
       gyroSubscription.remove();
       accelSubscription.remove();
       clearInterval(processingInterval);
@@ -72,28 +122,14 @@ export default function App() {
     );
   }
 
-  function toggleCameraFacing() {
-    setFacing(current => (current === 'back' ? 'front' : 'back'));
-  }
-
-  async function takePicture() {
-    if (cameraRef.current) {
-      const photo = await cameraRef.current.takePictureAsync();
-      console.log('Photo taken:', photo.uri);
-    }
-  }
-
   return (
     <View style={styles.container}>
-      <CameraView style={styles.camera} facing={facing} ref={cameraRef}>
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity style={styles.button} onPress={toggleCameraFacing}>
-            <Text style={styles.text}>Flip</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.button} onPress={takePicture}>
-            <Text style={styles.text}>Snapshot</Text>
-          </TouchableOpacity>
-        </View>
+      <CameraView
+        style={styles.camera}
+        facing={facing} // Always use the front camera
+        ref={cameraRef}
+        onCameraReady={() => { isCameraReady.current = true; }}
+      >
         <View style={styles.sensorContainer}>
           <Text style={styles.riskScoreText}>Risk Score: {riskScore}</Text>
           <Text style={styles.sensorText}>Gyroscope:</Text>
@@ -133,22 +169,6 @@ const styles = StyleSheet.create({
   },
   camera: {
     flex: 1,
-  },
-  buttonContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    backgroundColor: 'transparent',
-    margin: 64,
-  },
-  button: {
-    flex: 1,
-    alignSelf: 'flex-end',
-    alignItems: 'center',
-  },
-  text: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: 'white',
   },
   sensorContainer: {
     position: 'absolute',
