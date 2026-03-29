@@ -146,7 +146,7 @@ const DrivingUI = () => {
     isComponentMounted.current = true;
     console.log('useEffect running, setting up WebSocket.');
     // Replace 'YOUR_TAILSCALE_IP' with the actual Tailscale IP of your backend laptop.
-    ws.current = new WebSocket('ws://100.69.148.51:3000');
+    ws.current = new WebSocket('ws://100.108.70.119:3000');
     console.log('WebSocket created for:', ws.current.url);
 
     ws.current.onopen = () => {
