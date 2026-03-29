@@ -212,6 +212,7 @@ const DrivingUI = () => {
       ) {
         try {
           const photo = await cameraRef.current.takePictureAsync({
+            shutterSound: false,
             quality: 0.3,
           });
           const response = await fetch(photo.uri);
