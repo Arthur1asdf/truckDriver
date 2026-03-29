@@ -24,20 +24,31 @@ data_store = {
 
 
 SIGNAL_WINDOW = 100
+ACCEL_BOOST_FACTOR = 9
+GYRO_NOISE_FLOOR = 0.75
+GYRO_TOLERANCE = 0.03
+PROBABILITY_THRESHOLD = 0.4
 
 # Extract features for acceleration and gyroscope models
-def extract_features_from_json(data_list):
+def extract_features_from_json(data_list, dataType):
     """
     Converts the incoming WebSocket JSON list into the 8 features 
     your model expects.
     """
     df = pd.DataFrame(data_list)
+
+    if dataType == "accel":
+        df['x'] *= ACCEL_BOOST_FACTOR
+        df['y'] *= ACCEL_BOOST_FACTOR
+        df['z'] *= ACCEL_BOOST_FACTOR
     
     # Vector Magnitudes
     mag = np.sqrt(df['x']**2 + df['y']**2 + df['z']**2)
     jerk = np.diff(mag)
+
+    is_gyro_noisy = mag.std() < GYRO_NOISE_FLOOR
     
-    return [
+    features = [
         mag.mean(),
         mag.std(),
         mag.max(),
@@ -45,6 +56,8 @@ def extract_features_from_json(data_list):
         np.mean(np.abs(jerk)) if len(jerk) > 0 else 0,
         mag.quantile(0.75) - mag.quantile(0.25)
     ]
+
+    return features, is_gyro_noisy
 
 
 @sock.route('/')
@@ -64,10 +77,16 @@ def echo(ws):
                     if data['type'] == 'gyro':
                         data_store["gyroMeasures"].append(data['data'])
                         if len(data_store["gyroMeasures"]) <= SIGNAL_WINDOW:
-                            features = extract_features_from_json(data_store["gyroMeasures"])
-                            prediction = int(gyroModel.predict([features])[0])
+                            features, is_inert = extract_features_from_json(data_store["gyroMeasures"], "gyro")
 
-                            if prediction != 0:
+                            # Check for tolerance
+
+                            if abs(features[0]) < GYRO_TOLERANCE:
+                                prediction = 0
+                            else:
+                                prediction = int(gyroModel.predict([features])[0])
+
+                            if not is_inert and prediction != 0:
                                 ws.send(json.dumps({"type": "gyro_inference", "label": "Dangerous"}))
                             else:
                                 ws.send(json.dumps({"type": "gyro_inference", "label": "Normal"}))
@@ -77,10 +96,10 @@ def echo(ws):
                     elif data['type'] == 'accelerometer':
                         data_store["accelMeasures"].append(data['data'])
                         if len(data_store["accelMeasures"]) <= SIGNAL_WINDOW:
-                            features = extract_features_from_json(data_store["accelMeasures"])
-                            prediction = int(accelModel.predict([features])[0])
+                            features, _ = extract_features_from_json(data_store["accelMeasures"], "accel")
+                            prediction_probs = accelModel.predict_proba([features])[0]
 
-                            if prediction != 0:
+                            if prediction_probs[1] > PROBABILITY_THRESHOLD:
                                 ws.send(json.dumps({"type": "accel_inference", "label": "Dangerous"}))
                             else:
                                 ws.send(json.dumps({"type": "accel_inference", "label": "Normal"}))
