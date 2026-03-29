@@ -15,6 +15,7 @@ export default function App() {
   const [gyroscopeData, setGyroscopeData] = useState({ x: 0, y: 0, z: 0 });
   const [accelerometerData, setAccelerometerData] = useState({ x: 0, y: 0, z: 0 });
   const [riskScore, setRiskScore] = useState(0);
+  const [modelPrediction, setModelPrediction] = useState('N/A');
   const isCameraReady = useRef(false);
   const cameraRef = useRef(null);
 
@@ -35,6 +36,20 @@ export default function App() {
 
     ws.current.onopen = () => {
       console.log('WebSocket connection opened');
+    };
+
+    ws.current.onmessage = (event) => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === 'inference' && data.predictions.length > 0) {
+          const { label, confidence } = data.predictions[0];
+          setModelPrediction(`${label} (${(confidence * 100).toFixed(1)}%)`);
+        } else if (data.type === 'inference') {
+          setModelPrediction('No detection');
+        }
+      } catch (e) {
+        console.error('Error parsing WebSocket message:', e);
+      }
     };
 
     ws.current.onclose = () => {
@@ -70,12 +85,10 @@ export default function App() {
     cameraFrameIntervalRef.current = setInterval(async () => {
       if (cameraRef.current && isCameraReady.current && ws.current?.readyState === WebSocket.OPEN) {
         try {
-          const photo = await cameraRef.current.takePictureAsync({ base64: true });
-          ws.current.send(JSON.stringify({
-            type: 'camera',
-            data: photo.base64,
-            timestamp: Date.now()
-          }));
+          const photo = await cameraRef.current.takePictureAsync({ base64: false, quality: 0.3 }); // Compress to avoid choking the WebSocket
+          const response = await fetch(photo.uri);
+          const buffer = await response.arrayBuffer();
+          ws.current.send(buffer); // Send pure ArrayBuffer to avoid JSON stringification of RN Blobs
         } catch (error) {
           console.error('Error capturing camera frame:', error);
         }
@@ -132,6 +145,7 @@ export default function App() {
       >
         <View style={styles.sensorContainer}>
           <Text style={styles.riskScoreText}>Risk Score: {riskScore}</Text>
+          <Text style={styles.riskScoreText}>Status: {modelPrediction}</Text>
           <Text style={styles.sensorText}>Gyroscope:</Text>
           <Text style={styles.sensorText}>
             x: {gyroscopeData.x.toFixed(2)}
