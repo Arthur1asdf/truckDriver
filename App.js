@@ -85,6 +85,7 @@ export default function App() {
 
     ws.current.onopen = () => {
       console.log("WebSocket connection opened");
+      streamFrames();
     };
 
     ws.current.onmessage = (event) => {
@@ -207,6 +208,7 @@ export default function App() {
         ref={cameraRef}
         onCameraReady={() => {
           isCameraReady.current = true;
+          streamFrames();
         }}
       >
         <View style={styles.sensorContainer}>
