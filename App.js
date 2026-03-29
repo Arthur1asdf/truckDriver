@@ -1,8 +1,23 @@
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Gyroscope, Accelerometer } from "expo-sensors";
 import { useState, useEffect, useRef } from "react";
-import { Button, StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import {
+  Button,
+  Dimensions,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from "react-native";
 import { calculateRiskScore } from "./riskScorer.js";
+import { Ionicons } from "@expo/vector-icons";
+import Svg, { Path, G } from "react-native-svg";
+import {
+  SafeAreaProvider,
+  useSafeAreaInsets,
+} from "react-native-safe-area-context";
+
+const DEVMODE = true;
 
 const SENSOR_UPDATE_INTERVAL_MS = 100;
 const SCORE_CALCULATION_WINDOW_S = 2;
@@ -11,6 +26,15 @@ const WINDOW_SIZE =
 const CAMERA_FRAME_INTERVAL_MS = 1000; // Send frame every 500ms
 
 export default function App() {
+  return (
+    <SafeAreaProvider>
+      <DrivingUI />
+    </SafeAreaProvider>
+  );
+}
+
+const DrivingUI = () => {
+  const insets = useSafeAreaInsets();
   const facing = "front"; // Always use the front camera
   const [permission, requestPermission] = useCameraPermissions();
   const [gyroscopeData, setGyroscopeData] = useState({ x: 0, y: 0, z: 0 });
@@ -32,6 +56,26 @@ export default function App() {
   const latestAccel = useRef({ x: 0, y: 0, z: 0 });
   const ws = useRef(null);
   const cameraFrameIntervalRef = useRef(null);
+
+  // UI Features
+  const [isDarkMode, setIsDarkMode] = useState(true);
+  const { width } = Dimensions.get("window");
+
+  const theme = {
+    background: isDarkMode ? "#121212" : "#F5F5F5",
+    text: isDarkMode ? "#FFFFFF" : "#000000",
+    dialBg: isDarkMode ? "#333333" : "#E0E0E0",
+    accent: "#FF3B30", // High-visibility Red
+  };
+
+  const size = width * 0.85;
+  const strokeWidth = 35;
+  const radius = (size - strokeWidth) / 2;
+  const center = size / 2;
+  const circumference = Math.PI * radius;
+  const progressOffset = circumference - (riskScore / 100) * circumference;
+
+  const toggleTheme = () => setIsDarkMode(!isDarkMode);
 
   useEffect(() => {
     console.log("useEffect running, setting up WebSocket.");
@@ -163,14 +207,15 @@ export default function App() {
 
   return (
     <View style={styles.container}>
-      <CameraView
+      {/* <CameraView
         style={styles.camera}
         facing={facing} // Always use the front camera
         ref={cameraRef}
         onCameraReady={() => {
           isCameraReady.current = true;
         }}
-      >
+      /> */}
+      {DEVMODE && (
         <View style={styles.sensorContainer}>
           <Text style={styles.riskScoreText}>Risk Score: {riskScore}</Text>
           <Text style={styles.riskScoreText}>Status: {modelPrediction}</Text>
@@ -191,16 +236,67 @@ export default function App() {
             z: {accelerometerData.z.toFixed(2)}
           </Text>
         </View>
-      </CameraView>
+      )}
+
+      <View
+        style={[
+          styles.screen,
+          {
+            backgroundColor: theme.background,
+            // Using insets directly to prevent overlap with Notch/Dynamic Island
+            paddingTop: insets.top,
+            paddingBottom: insets.bottom,
+          },
+        ]}
+      >
+        <TouchableOpacity
+          onPress={() => setIsDarkMode(!isDarkMode)}
+          style={styles.themeToggle}
+        >
+          <Ionicons
+            name={isDarkMode ? "moon" : "sunny"}
+            size={36}
+            color={theme.text}
+          />
+        </TouchableOpacity>
+
+        <View style={styles.dialContainer}>
+          <View style={{ width: size, height: center + strokeWidth }}>
+            <Svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
+              <G>
+                <Path
+                  d={`M ${strokeWidth / 2},${center} A ${radius},${radius} 0 0,1 ${size - strokeWidth / 2},${center}`}
+                  stroke={theme.dialBg}
+                  strokeWidth={strokeWidth}
+                  fill="none"
+                  strokeLinecap="round"
+                />
+                <Path
+                  d={`M ${strokeWidth / 2},${center} A ${radius},${radius} 0 0,1 ${size - strokeWidth / 2},${center}`}
+                  stroke={theme.accent}
+                  strokeWidth={strokeWidth}
+                  fill="none"
+                  strokeDasharray={`${circumference}, ${circumference}`}
+                  strokeDashoffset={progressOffset}
+                  strokeLinecap="round"
+                />
+              </G>
+            </Svg>
+
+            <View style={[styles.overlay, { top: center * 0.4 }]}>
+              <Text style={[styles.valueText, { color: theme.text }]}>
+                {riskScore}
+              </Text>
+              <Text style={[styles.label, { color: theme.text }]}>RISK %</Text>
+            </View>
+          </View>
+        </View>
+      </View>
     </View>
   );
-}
+};
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: "center",
-  },
   message: {
     textAlign: "center",
     paddingBottom: 10,
@@ -215,6 +311,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0, 0, 0, 0.5)",
     borderRadius: 5,
     padding: 5,
+    zIndex: 50,
   },
   sensorText: {
     color: "white",
@@ -225,5 +322,59 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: "bold",
     marginBottom: 10,
+  },
+  container: {
+    flex: 1,
+    transition: "background-color 0.3s ease",
+  },
+  iconButton: {
+    alignSelf: "flex-end",
+    padding: 20,
+    marginTop: 10,
+  },
+  mainContent: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  textOverlay: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    alignItems: "center",
+  },
+  labelSuffix: {
+    fontSize: 18,
+    fontWeight: "600",
+    opacity: 0.7,
+    marginTop: -10,
+  },
+  screen: {
+    flex: 1,
+  },
+  themeToggle: {
+    alignSelf: "flex-end",
+    padding: 20,
+  },
+  dialContainer: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  overlay: {
+    position: "absolute",
+    width: "100%",
+    alignItems: "center",
+  },
+  valueText: {
+    fontSize: 110,
+    fontWeight: "900",
+    fontVariant: ["tabular-nums"], // Prevents jittering if the number changes
+  },
+  label: {
+    fontSize: 20,
+    fontWeight: "bold",
+    opacity: 0.5,
+    marginTop: -10,
   },
 });
