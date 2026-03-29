@@ -17,6 +17,7 @@ import {
   SafeAreaProvider,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
+import * as Haptics from "expo-haptics";
 
 const DEVMODE = true;
 const SENSOR_UPDATE_INTERVAL_MS = 100;
@@ -37,6 +38,7 @@ export default function App() {
 }
 
 const DrivingUI = () => {
+  const facing = "front";
   const insets = useSafeAreaInsets();
   const [permission, requestPermission] = useCameraPermissions();
 
@@ -81,6 +83,13 @@ const DrivingUI = () => {
       duration: 600, // Slightly longer for smoother transitions in driving
       useNativeDriver: true,
     }).start();
+
+    // Inside your riskScore useEffect:
+    if (riskScore > 80) {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } else if (riskScore > 50) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    }
   }, [riskScore]);
 
   // Listener for text display (Runs once)
@@ -213,6 +222,15 @@ const DrivingUI = () => {
           </Text>
         </View>
       )}
+
+      <CameraView
+        style={styles.camera}
+        facing={facing} // Always use the front camera
+        ref={cameraRef}
+        onCameraReady={() => {
+          isCameraReady.current = true;
+        }}
+      />
 
       <View
         style={[
