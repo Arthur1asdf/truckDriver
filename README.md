@@ -1,4 +1,4 @@
-# VisualEyes
+# VigilEyes
 
 Built for the miles that matter
 
