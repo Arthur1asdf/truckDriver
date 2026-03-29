@@ -61,27 +61,24 @@ function buildSubScores(signals) {
 }
 
 // 3. Combine into ONE risk score
-function combineScores(subScores, drowsinessRisk) {
-    const drivingRisk =
+function combineScores(subScores) {
+    const risk_0_1 =
         0.35 * subScores.swerve +
         0.25 * subScores.brake +
         0.15 * subScores.accel +
         0.25 * subScores.jerk_score;
-        
-    // 60% weight to drowsiness, 40% weight to driving signals
-    const combinedRisk = 0.40 * drivingRisk + 0.60 * (drowsinessRisk / 100);
-    return combinedRisk;
+    return risk_0_1;
 }
 
 // Main function to calculate the risk score
-export function calculateRiskScore(sensorWindow, lastRiskScore, drowsinessRisk = 0, timeDelta = 0.1) { // 100ms default interval
+export function calculateRiskScore(sensorWindow, lastRiskScore, timeDelta = 0.1) { // 100ms default interval
     if (sensorWindow.length < 2) {
-        return lastRiskScore !== undefined ? lastRiskScore : 0;
+        return lastRiskScore !== undefined ? lastRiskScore * 100 : 0;
     }
 
     const signals = computeCoreSignals(sensorWindow, timeDelta);
     const subScores = buildSubScores(signals);
-    const risk_0_1 = combineScores(subScores, drowsinessRisk);
+    const risk_0_1 = combineScores(subScores);
 
     // 4. Smooth the final score
     const smoothedRisk = 0.8 * (lastRiskScore / 100) + 0.2 * risk_0_1;
