@@ -10,7 +10,7 @@ const WINDOW_SIZE = (SCORE_CALCULATION_WINDOW_S * 1000) / SENSOR_UPDATE_INTERVAL
 const CAMERA_FRAME_INTERVAL_MS = 1000; // Send frame every 500ms
 
 export default function App() {
-  const [facing, setFacing] = useState('back');
+  const facing = 'front'; // Always use the front camera
   const [permission, requestPermission] = useCameraPermissions();
   const [gyroscopeData, setGyroscopeData] = useState({ x: 0, y: 0, z: 0 });
   const [accelerometerData, setAccelerometerData] = useState({ x: 0, y: 0, z: 0 });
@@ -61,6 +61,9 @@ export default function App() {
     const accelSubscription = Accelerometer.addListener(accelData => {
       latestAccel.current = accelData;
       setAccelerometerData(accelData);
+      if (ws.current && ws.current.readyState === WebSocket.OPEN) {
+        ws.current.send(JSON.stringify({ type: 'accelerometer', data: accelData }));
+      }
     });
 
     // --- Camera Frame Capture ---
@@ -119,28 +122,14 @@ export default function App() {
     );
   }
 
-  function toggleCameraFacing() {
-    setFacing(current => (current === 'back' ? 'front' : 'back'));
-  }
-
-  async function takePicture() {
-    if (cameraRef.current) {
-      const photo = await cameraRef.current.takePictureAsync();
-      console.log('Photo taken:', photo.uri);
-    }
-  }
-
   return (
     <View style={styles.container}>
-      <CameraView style={styles.camera} facing={facing} ref={cameraRef} onCameraReady={() => isCameraReady.current = true}>
-        <View style={styles.buttonContainer}>
-          <TouchableOpacity style={styles.button} onPress={toggleCameraFacing}>
-            <Text style={styles.text}>Flip</Text>
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.button} onPress={takePicture}>
-            <Text style={styles.text}>Snapshot</Text>
-          </TouchableOpacity>
-        </View>
+      <CameraView
+        style={styles.camera}
+        facing={facing} // Always use the front camera
+        ref={cameraRef}
+        onCameraReady={() => { isCameraReady.current = true; }}
+      >
         <View style={styles.sensorContainer}>
           <Text style={styles.riskScoreText}>Risk Score: {riskScore}</Text>
           <Text style={styles.sensorText}>Gyroscope:</Text>
@@ -180,22 +169,6 @@ const styles = StyleSheet.create({
   },
   camera: {
     flex: 1,
-  },
-  buttonContainer: {
-    flex: 1,
-    flexDirection: 'row',
-    backgroundColor: 'transparent',
-    margin: 64,
-  },
-  button: {
-    flex: 1,
-    alignSelf: 'flex-end',
-    alignItems: 'center',
-  },
-  text: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: 'white',
   },
   sensorContainer: {
     position: 'absolute',
