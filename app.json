@@ -13,6 +13,9 @@
       "backgroundColor": "#ffffff"
     },
     "ios": {
+      "infoPlist": {
+        "UIBackgroundModes": ["audio"]
+      },
       "supportsTablet": true
     },
     "android": {
@@ -32,6 +35,12 @@
           "cameraPermission": "Allow truckDriver to access your camera",
           "microphonePermission": "Allow truckDriver to access your microphone",
           "recordAudioAndroid": true
+        }
+      ],
+      [
+        "expo-audio",
+        {
+          "playsInSilentModeIOS": true
         }
       ]
     ]
