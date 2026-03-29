@@ -38,10 +38,22 @@ def echo(ws):
                 frame = cv2.imdecode(nparr, cv2.IMREAD_COLOR)
                 
                 if frame is not None:
-                    # Run inference (auto-device safely falls back; verbose=False stops YOLO log spam)
-                    results = model(frame, conf=0.4, verbose=False)
+                    # Run inference (lowered conf slightly to catch more yawns)
+                    results = model(frame, conf=0.3, verbose=False)
                     
                     predictions = [{"label": model.names[int(box.cls[0])], "confidence": float(box.conf[0])} for r in results for box in r.boxes]
+                            
+                    # Prioritize 'yawning' over 'sleepy' over 'active' so it displays on screen
+                    def get_priority(p):
+                        lbl = str(p["label"]).lower()
+                        if "yawn" in lbl or lbl == "2": return 0
+                        if "sleep" in lbl or lbl == "1": return 1
+                        return 2
+                        
+                    predictions.sort(key=get_priority)
+                            
+                    # Debugging: Print to console so you can explicitly see if YOLO is detecting it
+                    print(f"YOLO Detections: {[f'{p['label']} ({p['confidence']:.2f})' for p in predictions]}")
                             
                     # Send predictions back to React Native
                     ws.send(json.dumps({"type": "inference", "predictions": predictions}))

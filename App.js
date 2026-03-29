@@ -7,7 +7,7 @@ import { calculateRiskScore } from './riskScorer.js';
 const SENSOR_UPDATE_INTERVAL_MS = 100;
 const SCORE_CALCULATION_WINDOW_S = 2;
 const WINDOW_SIZE = (SCORE_CALCULATION_WINDOW_S * 1000) / SENSOR_UPDATE_INTERVAL_MS;
-const CAMERA_FRAME_INTERVAL_MS = 50; // Send frame every 500ms
+const CAMERA_FRAME_INTERVAL_MS = 200; // 5 FPS prevents overwhelming the phone's storage I/O
 
 export default function App() {
   const facing = 'front'; // Always use the front camera
@@ -22,6 +22,7 @@ export default function App() {
   const cameraRef = useRef(null);
   const isCapturing = useRef(false); // Lock to prevent concurrent captures
   const currentDrowsinessRisk = useRef(0); // Ref to access latest drowsiness inside intervals
+  const consecutiveSleepCount = useRef(0); // Track consecutive drowsy frames
 
   const sensorWindow = useRef([]);
   const lastRiskScore = useRef(0);
@@ -55,25 +56,56 @@ export default function App() {
           if (data.predictions.length > 0) {
             const { label, confidence } = data.predictions[0];
             setModelPrediction(`${label} (${(confidence * 100).toFixed(1)}%)`);
-            currentLabel = label;
+            currentLabel = String(label).toLowerCase().trim(); // Force lowercase for reliable matching
           } else {
             setModelPrediction('No detection');
           }
 
+          // --- Consecutive Drowsiness Logic ---
+          const isDrowsyFrame = currentLabel.includes('sleep') || currentLabel.includes('yawn') || currentLabel === 'none' || currentLabel === '1' || currentLabel === '2';
+          if (isDrowsyFrame) {
+            consecutiveSleepCount.current += 1;
+          } else {
+            consecutiveSleepCount.current = 0; // Reset if eyes are open or not detected
+          }
+
+          // --- Ratio-based Drowsiness Logic (Micro-sleeps) ---
           predictionHistory.current.push(currentLabel);
-          if (predictionHistory.current.length > 10) {
+          if (predictionHistory.current.length > 75) { // Store last 15 seconds of frames at 5fps
             predictionHistory.current.shift();
           }
 
-          const sleepyCount = predictionHistory.current.filter(l => l === 'sleepy').length;
-          const activeCount = predictionHistory.current.filter(l => l === 'active').length;
-          const totalValid = sleepyCount + activeCount;
-          const ratio = totalValid > 0 ? sleepyCount / totalValid : 0;
+          // Quadratically weight recent frames so risk drops off much faster when awake
+          let sleepyWeight = 0;
+          let totalWeight = 0;
+          predictionHistory.current.forEach((l, index) => {
+            const weight = Math.pow(index + 1, 2); // Oldest frame = 1, Newest = 5625
+            if (l.includes('sleep') || l.includes('yawn') || l === 'none' || l === '1' || l === '2') {
+              sleepyWeight += weight;
+              totalWeight += weight;
+            } else if (l.includes('active') || l === '0') {
+              totalWeight += weight;
+            }
+          });
           
-          // Exponential curve: goes from linear to aggressively steep using a power function
-          const expRisk = Math.round(Math.pow(ratio, 2.5) * 100);
-          setDrowsinessRisk(expRisk);
-          currentDrowsinessRisk.current = expRisk;
+          const ratio = totalWeight > 0 ? sleepyWeight / totalWeight : 0;
+          
+          // Slightly smoother curve (power of 0.7) so it doesn't spike too aggressively on low ratios
+          const ratioRisk = Math.round(Math.pow(ratio, 0.7) * 100);
+
+          // --- Consecutive Risk Penalty ---
+          // Trigger earlier (2 frames / 400ms) to aggressively catch micro-sleeps.
+          let consecutiveRisk = 0;
+          if (consecutiveSleepCount.current >= 2) {
+            // Rises slightly less exponentially: 2 frames = 36, 3 frames = 69, 4+ frames = 100
+            consecutiveRisk = Math.min(100, Math.round(12 * Math.pow(consecutiveSleepCount.current, 1.6)));
+          }
+
+          // The final risk is the HIGHER of the two methods.
+          const finalRisk = Math.max(ratioRisk, consecutiveRisk);
+          
+          setDrowsinessRisk(finalRisk);
+          currentDrowsinessRisk.current = finalRisk;
         }
       } catch (e) {
         console.error('Error parsing WebSocket message:', e);
@@ -116,12 +148,12 @@ export default function App() {
       if (cameraRef.current && isCameraReady.current && ws.current?.readyState === WebSocket.OPEN) {
         isCapturing.current = true;
         try {
-          const photo = await cameraRef.current.takePictureAsync({ base64: false, quality: 0.3 }); // Compress to avoid choking the WebSocket
+          const photo = await cameraRef.current.takePictureAsync({ base64: false, quality: 0.6 }); // Bump quality so YOLO can clearly see the mouth
           const response = await fetch(photo.uri);
           const buffer = await response.arrayBuffer();
           ws.current.send(buffer); // Send pure ArrayBuffer to avoid JSON stringification of RN Blobs
         } catch (error) {
-          console.error('Error capturing camera frame:', error);
+          // Suppress the initial "camera not ready" error that happens on app startup
         } finally {
           isCapturing.current = false;
         }
