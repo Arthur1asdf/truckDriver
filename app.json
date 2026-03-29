@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "truckDriver",
-    "slug": "truckDriver",
+    "name": "VigilEyes",
+    "slug": "VigilEyes",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
@@ -32,8 +32,8 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow truckDriver to access your camera",
-          "microphonePermission": "Allow truckDriver to access your microphone",
+          "cameraPermission": "Allow VigilEyes to access your camera",
+          "microphonePermission": "Allow VigilEyes to access your microphone",
           "recordAudioAndroid": true
         }
       ],

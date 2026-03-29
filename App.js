@@ -22,7 +22,7 @@ import * as Haptics from "expo-haptics";
 import * as Speech from "expo-speech";
 import { Audio, useAudioPlayer } from "expo-audio";
 
-const DEVMODE = true;
+const DEVMODE = false;
 const SENSOR_UPDATE_INTERVAL_MS = 100;
 const SCORE_CALCULATION_WINDOW_S = 2;
 const WINDOW_SIZE = (SCORE_CALCULATION_WINDOW_S * 1000) / SENSOR_UPDATE_INTERVAL_MS;
@@ -78,6 +78,7 @@ const DrivingUI = () => {
   const consecutiveSleepCount = useRef(0); 
   const cameraFrameIntervalRef = useRef(null);
   const lastAlertTime = useRef(0);
+  const alertIntervalRef = useRef(null);
 
   // Keep track of latest statuses for the dashboard telemetry payload
   const currentPredictionRef = useRef("N/A");
@@ -119,24 +120,39 @@ const DrivingUI = () => {
   const alertPlayer = useAudioPlayer(alertSource);
 
   useEffect(() => {
-    const now = Date.now();
-
     Animated.timing(animatedValue, {
       toValue: riskScore,
       duration: 600, 
-      useNativeDriver: true,
+      useNativeDriver: false,
     }).start();
 
-    if (riskScore > 80) {
-      if (now - lastAlertTime.current > 3000) {
-        speakAlert("HIGH RISK DETECTED! WAKE UP!");
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-        lastAlertTime.current = now; 
+    // High-risk, continuous alert
+    if (riskScore >= 80) {
+      if (!alertIntervalRef.current) {
+        const triggerAlerts = () => {
+          alertPlayer.seekTo(0);
+          speakAlert("HIGH RISK DETECTED! WAKE UP!");
+          alertPlayer.play();
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        };
+        triggerAlerts(); // Initial alert
+        alertIntervalRef.current = setInterval(triggerAlerts, 3000); // Repeat every 3s
       }
-    } else if (riskScore > 70) {
-      if (now - lastAlertTime.current > 5000) {
-        alertPlayer.play();
-        lastAlertTime.current = now;
+    } else {
+      // Score is below 80, so clear the high-risk interval if it's running.
+      if (alertIntervalRef.current) {
+        clearInterval(alertIntervalRef.current);
+        alertIntervalRef.current = null;
+      }
+
+      // Handle medium-risk (70-79) throttled alert
+      if (riskScore > 70) {
+        const now = Date.now();
+        if (now - lastAlertTime.current > 5000) {
+          alertPlayer.seekTo(0);
+          alertPlayer.play();
+          lastAlertTime.current = now;
+        }
       }
     }
   }, [riskScore]);
@@ -149,7 +165,7 @@ const DrivingUI = () => {
     const setupAudio = async () => {
       await Audio.setAudioModeAsync({
         playsInSilentModeIOS: true,
-        interruptionModeIOS: 1, 
+        interruptionModeIOS: 0, 
         allowsRecordingIOS: true, 
         staysActiveInBackground: true,
       });
@@ -162,6 +178,11 @@ const DrivingUI = () => {
   const strokeDashoffset = animatedValue.interpolate({
     inputRange: [0, 100],
     outputRange: [circumference, 0],
+  });
+
+  const strokeColor = animatedValue.interpolate({
+    inputRange: [0, 30, 50, 60, 70, 100],
+    outputRange: ["#00BFFF", "#00BFFF", "#FFD700", "#FFA500", "#FF0000", "#FF0000"],
   });
 
   const speakAlert = (message) => {
@@ -181,7 +202,7 @@ const DrivingUI = () => {
     background: isDarkMode ? "rgba(18,18,18,0.85)" : "rgba(245,245,245,0.85)", 
     text: isDarkMode ? "#FFFFFF" : "#000000",
     dialBg: isDarkMode ? "#333333" : "#E0E0E0",
-    accent: "#00BFFF", // Switched to skyblue accent
+    accent: "#df0a0a", // Switched to skyblue accent
   };
 
   useEffect(() => {
@@ -190,7 +211,7 @@ const DrivingUI = () => {
     });
 
     isComponentMounted.current = true;
-    ws.current = new WebSocket('ws://100.108.70.119:3000');
+    ws.current = new WebSocket('ws://100.69.148.51:3000');
 
     ws.current.onopen = () => {
       streamFrames();
@@ -220,18 +241,27 @@ const DrivingUI = () => {
           }
 
           predictionHistory.current.push(currentLabel);
-          if (predictionHistory.current.length > 75) { 
+          if (predictionHistory.current.length > 30) { 
             predictionHistory.current.shift();
           }
 
           let sleepyWeight = 0;
           let totalWeight = 0;
+          
+          const isDrowsy = (lbl) => lbl.includes('sleep') || lbl.includes('yawn') || lbl === 'none' || lbl === '1' || lbl === '2';
+          const isActive = (lbl) => lbl.includes('active') || lbl === '0';
+
           predictionHistory.current.forEach((l, index) => {
             const weight = Math.pow(index + 1, 2); 
-            if (l.includes('sleep') || l.includes('yawn') || l === 'none' || l === '1' || l === '2') {
-              sleepyWeight += weight;
+            if (isDrowsy(l)) {
+              const prevDrowsy = index > 0 && isDrowsy(predictionHistory.current[index - 1]);
+              const nextDrowsy = index < predictionHistory.current.length - 1 && isDrowsy(predictionHistory.current[index + 1]);
+              
+              if (prevDrowsy || nextDrowsy) {
+                sleepyWeight += weight;
+              }
               totalWeight += weight;
-            } else if (l.includes('active') || l === '0') {
+            } else if (isActive(l)) {
               totalWeight += weight;
             }
           });
@@ -335,6 +365,7 @@ const DrivingUI = () => {
       appStateSubscription.remove();
       clearInterval(processingInterval);
       if (cameraFrameIntervalRef.current) clearInterval(cameraFrameIntervalRef.current);
+      if (alertIntervalRef.current) clearInterval(alertIntervalRef.current);
     };
   }, []);
 
@@ -400,7 +431,7 @@ const DrivingUI = () => {
                 />
                 <AnimatedPath
                   d={`M ${strokeWidth / 2},${center} A ${radius},${radius} 0 0,1 ${size - strokeWidth / 2},${center}`}
-                  stroke={theme.accent}
+                  stroke={strokeColor}
                   strokeWidth={strokeWidth}
                   fill="none"
                   strokeDasharray={`${circumference}, ${circumference}`}

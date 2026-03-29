@@ -119,9 +119,9 @@ function App() {
   };
 
   // Determine Alert States
-  const isSleeping = String(telemetry.prediction).toLowerCase().includes('sleep');
+  // const isSleeping = String(telemetry.prediction).toLowerCase().includes('sleep');
   const isHighRisk = telemetry.riskScore > 70;
-  const isAlarmActive = isSleeping || isHighRisk;
+  const isAlarmActive = isHighRisk;
 
   const yAxisDomain = [(dataMin) => Math.min(dataMin, -2), (dataMax) => Math.max(dataMax, 2)];
 
@@ -269,7 +269,7 @@ function App() {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, justifyContent: 'center' }}>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
                     <span style={{color: '#8b949e'}}>Buffer Size</span>
-                    <span style={{fontWeight: 'bold'}}>75 Frames (~15s)</span>
+                    <span style={{fontWeight: 'bold'}}>30 Frames (~6s)</span>
                   </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
                     <span style={{color: '#8b949e'}}>Temporal Weight</span>
