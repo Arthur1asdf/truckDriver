@@ -1,7 +1,7 @@
-// App.jsx inside your Vite project
 import React, { useEffect, useState } from 'react';
 
-const SERVER_URL = "ws://100.108.70.119:3000";
+// Connect to the Flask backend's dedicated frontend route
+const SERVER_URL = "ws://100.108.70.119:3000/frontend"; 
 
 function App() {
   const [frame, setFrame] = useState(null);
@@ -10,40 +10,50 @@ function App() {
   useEffect(() => {
     const ws = new WebSocket(SERVER_URL);
 
-    ws.onopen = () => setConnected(true);
+    ws.onopen = () => {
+      setConnected(true);
+      console.log("Connected to Flask Backend");
+    };
     
     ws.onmessage = (event) => {
-      try {
-        const data = JSON.parse(event.data);
+      // Check if data is binary (the camera frame)
+      if (event.data instanceof Blob) {
+        const url = URL.createObjectURL(event.data);
+        setFrame(url);
         
-        // Check if the message type is 'camera'
-        if (data.type === 'camera') {
-          // Your Node server sends data.data as the base64 string
-          setFrame(`data:image/jpeg;base64,${data.data}`);
+        // Clean up memory to prevent leaks from old object URLs
+        return () => URL.revokeObjectURL(url);
+      } else {
+        // Handle future sensor data or status updates
+        try {
+          const data = JSON.parse(event.data);
+          console.log("Received sensor/status data:", data);
+        } catch (err) {
+          console.log("Received unknown text message");
         }
-      } catch (err) {
-        console.log("Error parsing message from Node server");
       }
     };
+
+    ws.onclose = () => setConnected(false);
 
     return () => ws.close();
   }, []);
 
   return (
-    <div style={{ textAlign: 'center', background: '#222', color: 'white', height: '100vh' }}>
-      <h1>Trucker Live Feed</h1>
-      <p>Status: {connected ? "🟢 Online" : "🔴 Offline"}</p>
+    <div style={{ textAlign: 'center', background: '#111', color: 'white', minHeight: '100vh', padding: '20px' }}>
+      <h1 style={{ color: '#00ff00' }}>Trucker Live Dashboard</h1>
+      <p>Backend Status: {connected ? "🟢 Online" : "🔴 Offline"}</p>
       
-      <div style={{ marginTop: '20px' }}>
+      <div style={{ marginTop: '20px', display: 'flex', justifyContent: 'center' }}>
         {frame ? (
           <img 
             src={frame} 
-            style={{ width: '80%', borderRadius: '12px', border: '4px solid #444' }} 
-            alt="Live Feed" 
+            style={{ width: '90%', maxWidth: '800px', borderRadius: '12px', border: '4px solid #333' }} 
+            alt="Live Stream" 
           />
         ) : (
-          <div style={{ padding: '100px', border: '2px dashed #666' }}>
-            Awaiting Phone Stream...
+          <div style={{ width: '90%', maxWidth: '800px', height: '450px', display: 'flex', alignItems: 'center', justifyContent: 'center', border: '2px dashed #444', borderRadius: '12px' }}>
+            <p style={{ color: '#666' }}>Awaiting stream from vehicle...</p>
           </div>
         )}
       </div>
