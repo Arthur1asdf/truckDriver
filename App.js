@@ -18,6 +18,9 @@ import {
   SafeAreaProvider,
   useSafeAreaInsets,
 } from "react-native-safe-area-context";
+import * as Haptics from "expo-haptics";
+import * as Speech from "expo-speech";
+import { Audio, useAudioPlayer } from "expo-audio";
 
 const DEVMODE = true;
 const SENSOR_UPDATE_INTERVAL_MS = 100;
@@ -27,6 +30,10 @@ const CAMERA_FRAME_INTERVAL_MS = 200; // 5 FPS prevents overwhelming the phone's
 
 const { width } = Dimensions.get("window");
 const AnimatedPath = Animated.createAnimatedComponent(Path);
+
+const alertSource = DEVMODE
+  ? require("./assets/fah.mp3")
+  : require("./assets/iphoneAlert.mp3");
 
 export default function App() {
   return (
@@ -75,6 +82,7 @@ const DrivingUI = () => {
   
   // ADDED: Missing reference to fix the Property 'cameraFrameIntervalRef' doesn't exist error
   const cameraFrameIntervalRef = useRef(null);
+  const lastAlertTime = useRef(0);
 
   // --- Recursive Camera Loop ---
   const streamFrames = async () => {
@@ -111,18 +119,50 @@ const DrivingUI = () => {
   // --- ANIMATION ---
   const animatedValue = useRef(new Animated.Value(0)).current;
 
+  const alertPlayer = useAudioPlayer(alertSource);
+
+  // Update animation when riskScore changes
   useEffect(() => {
+    const now = Date.now();
+
     Animated.timing(animatedValue, {
       toValue: riskScore,
       duration: 600, 
       useNativeDriver: true,
     }).start();
+
+    if (riskScore > 80) {
+      if (now - lastAlertTime.current > 3000) {
+        speakAlert("HIGH RISK DETECTED! WAKE UP!");
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+        lastAlertTime.current = now; // Update only on successful alert
+      }
+    } else if (riskScore > 70) {
+      if (now - lastAlertTime.current > 5000) {
+        alertPlayer.play();
+        lastAlertTime.current = now;
+      }
+    }
   }, [riskScore]);
 
   useEffect(() => {
     const listenerId = animatedValue.addListener(({ value }) => {
       setDisplayValue(Math.floor(value));
     });
+
+    const setupAudio = async () => {
+      // This is critical: it forces iOS to play sound even on Silent/Mute mode
+      // and tells the OS not to "duck" your sound when the camera is on.
+      await Audio.setAudioModeAsync({
+        playsInSilentModeIOS: true,
+        interruptionModeIOS: 1, // 1 = DuckOthers (lowers music, plays your alert)
+        allowsRecordingIOS: true, // Necessary because you're using the Camera
+        staysActiveInBackground: true,
+      });
+    };
+
+    setupAudio();
+
     return () => animatedValue.removeListener(listenerId);
   }, []);
 
@@ -130,6 +170,24 @@ const DrivingUI = () => {
     inputRange: [0, 100],
     outputRange: [circumference, 0],
   });
+
+  const speakAlert = (message) => {
+    Speech.isSpeakingAsync().then((speaking) => {
+      if (!speaking) {
+        Speech.speak(message, {
+          language: "en-US",
+          pitch: 1.0,
+          rate: 1.1, // Slightly faster for urgent driving alerts
+          volume: 1.0,
+        });
+      }
+    });
+  };
+
+  const emergencyAlert = (msg) => {
+    Speech.stop(); // Kills current speech
+    Speech.speak(msg);
+  };
 
   const theme = {
     background: isDarkMode ? "rgba(18,18,18,0.85)" : "rgba(245,245,245,0.85)", // Semi-transparent overlay to let camera peek through
