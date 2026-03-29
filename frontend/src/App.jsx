@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { LineChart, Line, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 
-const SERVER_URL = "ws://100.108.70.119:3000/frontend"; 
+const SERVER_URL = "ws://100.69.148.51:3000/frontend"; 
 const MAX_DATA_POINTS = 30;
 const MAX_LOGS = 5;
 
