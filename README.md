@@ -107,11 +107,18 @@ cd backend
 python app.py
 ```
 
-2. **Mobile**
+2. **Frontend**
 
 ```bash
 # Install dependencies
 npm install
+cd frontend
+# Run React dashboard
+npm run dev
+```
+3. **Mobile**
+
+```bash
 # Run mobile app
 npx expo start
 ```
