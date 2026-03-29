@@ -38,7 +38,7 @@ export default function App() {
     // --- WebSocket Connection ---
     // Replace 'YOUR_TAILSCALE_IP' with the actual Tailscale IP of your backend laptop.
     // THIS MUST BE CHANGED FOR EACH IP ADDRESS!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
-    ws.current = new WebSocket("ws://100.118.89.67:3000");
+    ws.current = new WebSocket("ws://100.108.70.119:3000");
     console.log("WebSocket created for:", ws.current.url);
 
     ws.current.onopen = () => {
