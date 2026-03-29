@@ -146,7 +146,7 @@ const DrivingUI = () => {
     isComponentMounted.current = true;
     console.log('useEffect running, setting up WebSocket.');
     // Replace 'YOUR_TAILSCALE_IP' with the actual Tailscale IP of your backend laptop.
-    ws.current = new WebSocket('ws://100.69.148.51:3000');
+    ws.current = new WebSocket('ws://100.108.70.119:3000');
     console.log('WebSocket created for:', ws.current.url);
 
     ws.current.onopen = () => {
@@ -247,7 +247,7 @@ const DrivingUI = () => {
       if (cameraRef.current && isCameraReady.current && ws.current?.readyState === WebSocket.OPEN) {
         isCapturing.current = true;
         try {
-          const photo = await cameraRef.current.takePictureAsync({ base64: false, quality: 0.6 }); // Bump quality so YOLO can clearly see the mouth
+          const photo = await cameraRef.current.takePictureAsync({ base64: false, quality: 0.6, shutterSound: false, skipProcessing: true}); // Bump quality so YOLO can clearly see the mouth
           const response = await fetch(photo.uri);
           const buffer = await response.arrayBuffer();
           ws.current.send(buffer); // Send pure ArrayBuffer to avoid JSON stringification of RN Blobs
