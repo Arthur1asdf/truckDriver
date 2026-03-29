@@ -24,14 +24,56 @@ export default function App() {
   const [accelSafety, setAccelSafety] = useState("Normal");
   const [gyroSafety, setGyroSafety] = useState("Normal");
   const isCameraReady = useRef(false);
+  const isCapturing = useRef(false); // Safety Lock: Prevents overlapping calls
   const cameraRef = useRef(null);
-
   const sensorWindow = useRef([]);
   const lastRiskScore = useRef(0);
   const latestGyro = useRef({ x: 0, y: 0, z: 0 });
   const latestAccel = useRef({ x: 0, y: 0, z: 0 });
   const ws = useRef(null);
-  const cameraFrameIntervalRef = useRef(null);
+  const isComponentMounted = useRef(true); // To stop the loop on unmount
+
+  // --- Recursive Camera Loop (The "Well Implemented" Way) ---
+  const streamFrames = async () => {
+    if (
+      !isComponentMounted.current || 
+      !cameraRef.current || 
+      !isCameraReady.current || 
+      isCapturing.current || 
+      ws.current?.readyState !== WebSocket.OPEN
+    ) {
+      // If not ready, check again in 1 second
+      setTimeout(streamFrames, 1000);
+      return;
+    }
+  
+    isCapturing.current = true;
+  
+    try {
+      const photo = await cameraRef.current.takePictureAsync({
+        base64: true,
+        quality: 0.1,         // Keep this low!
+        skipProcessing: true, 
+        shutterSound: false,  // Disabling sound can speed up hardware reset
+      });
+  
+      ws.current.send(JSON.stringify({
+        type: 'camera',
+        data: photo.base64,
+        timestamp: Date.now(),
+      }));
+  
+      // SUCCESS: Wait 100ms before starting the next one
+      setTimeout(streamFrames, 100); 
+  
+    } catch (error) {
+      console.log("Hardware busy, backing off...");
+      // ERROR: Wait longer (500ms) before retrying to let the hardware reset
+      setTimeout(streamFrames, 500);
+    } finally {
+      isCapturing.current = false;
+    }
+  };
 
   useEffect(() => {
     console.log("useEffect running, setting up WebSocket.");
@@ -129,7 +171,7 @@ export default function App() {
         );
         setRiskScore(newRiskScore);
         lastRiskScore.current = newRiskScore;
-        sensorWindow.current = []; // Reset for the next window
+        sensorWindow.current = [];
       }
     }, SENSOR_UPDATE_INTERVAL_MS);
 
@@ -144,13 +186,9 @@ export default function App() {
     };
   }, []);
 
-  if (!permission) {
-    // Camera permissions are still loading.
-    return <View />;
-  }
+  if (!permission) return <View />;
 
   if (!permission.granted) {
-    // Camera permissions are not granted yet.
     return (
       <View style={styles.container}>
         <Text style={styles.message}>
@@ -165,7 +203,7 @@ export default function App() {
     <View style={styles.container}>
       <CameraView
         style={styles.camera}
-        facing={facing} // Always use the front camera
+        facing={facing}
         ref={cameraRef}
         onCameraReady={() => {
           isCameraReady.current = true;
