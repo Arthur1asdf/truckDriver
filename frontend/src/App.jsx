@@ -160,7 +160,7 @@ function App() {
       {/* Header */}
       <header style={{ padding: '15px 30px', borderBottom: '1px solid #30363d', display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: '#010409' }}>
         <h1 style={{ margin: 0, color: '#00BFFF', fontSize: '22px', fontWeight: '800', letterSpacing: '1px' }}>
-          VIGIL<span style={{color: '#e6edf3'}}>EYES</span> 
+          TRUCK<span style={{color: '#e6edf3'}}>DRIVER</span> 
           <span style={{color: '#8b949e', fontSize: '13px', fontWeight: '500', marginLeft: '15px'}}>Live Telemetry</span>
         </h1>
         <div style={{ fontSize: '13px', fontWeight: '600', display: 'flex', gap: '20px', alignItems: 'center' }}>
@@ -198,10 +198,10 @@ function App() {
             <div style={{ background: '#161b22', padding: '15px', borderRadius: '12px', border: '1px solid #30363d'}}>
               <div style={{ fontSize: '12px', color: '#8b949e', marginBottom: '5px' }}>KINEMATICS</div>
               <div style={{ fontSize: '14px', fontWeight: 'bold', marginTop: '5px' }}>
-                A: <span style={{ color: telemetry.accelSafety === 'Dangerous' ? '#ff4444' : '#00BFFF' }}>{telemetry.accelSafety}</span>
+                Accelerometer: <span style={{ color: telemetry.accelSafety === 'Dangerous' ? '#ff4444' : '#00BFFF' }}>{telemetry.accelSafety}</span>
               </div>
               <div style={{ fontSize: '14px', fontWeight: 'bold' }}>
-                G: <span style={{ color: telemetry.gyroSafety === 'Dangerous' ? '#ff4444' : '#00BFFF' }}>{telemetry.gyroSafety}</span>
+                Gyroscope: <span style={{ color: telemetry.gyroSafety === 'Dangerous' ? '#ff4444' : '#00BFFF' }}>{telemetry.gyroSafety}</span>
               </div>
             </div>
           </div>
@@ -228,19 +228,19 @@ function App() {
             )}
             
             <div style={{ position: 'absolute', top: '15px', left: '15px', background: 'rgba(0, 191, 255, 0.15)', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', color: '#00BFFF', border: '1px solid #00BFFF', fontWeight: 'bold', backdropFilter: 'blur(4px)' }}>
-              LIVE - IMAGE PROCESSING ON
+              LIVE - MODEL PROCESSING ON
             </div>
           </div>
         </div>
 
-        {/* Right: Telemetry Charts & Diagnostics (The formerly empty space) */}
+        {/* Right: Telemetry Charts & Diagnostics */}
         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0', overflowY: 'auto', paddingRight: '10px' }}>
           
           {/* Kinematics Charts */}
           <SensorChart title="ACCELEROMETER (m/s²)" data={accelData} colorX="#ff6b6b" colorY="#4ecdc4" colorZ="#00BFFF" />
           <SensorChart title="GYROSCOPE (rad/s)" data={gyroData} colorX="#feca57" colorY="#ff9ff3" colorZ="#a29bfe" />
 
-          {/* NEW: Risk Analysis Chart */}
+          {/* Risk Analysis Chart */}
           <div style={{ background: '#161b22', padding: '15px', borderRadius: '12px', marginBottom: '15px', border: '1px solid #30363d' }}>
              <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', color: '#8b949e', textAlign: 'left' }}>RISK HISTORY (%)</h3>
              <div style={{ height: '120px', width: '100%' }}>
@@ -257,53 +257,111 @@ function App() {
              </div>
           </div>
 
-          {/* NEW: System Diagnostics & Log Panel Row */}
-          <div style={{ display: 'flex', gap: '15px', flex: 1 }}>
+          {/* LOWER DIAGNOSTICS GRID (2x2) */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '15px', flex: 1 }}>
             
-            {/* AI Calculation Weights Container */}
-            <div style={{ flex: 1, background: '#161b22', padding: '15px', borderRadius: '12px', border: '1px solid #30363d' }}>
-              <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', color: '#8b949e' }}>MODEL WEIGHT DIAGNOSTICS</h3>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                  <span style={{color: '#8b949e'}}>Window Size</span>
-                  <span style={{fontWeight: 'bold'}}>75 Frames</span>
+            {/* ROW 1: Vision Algorithm & Events */}
+            <div style={{ display: 'flex', gap: '15px', flex: 1 }}>
+              
+              {/* Vision Engine Diagnostics */}
+              <div style={{ flex: 1, background: '#161b22', padding: '15px', borderRadius: '12px', border: '1px solid #30363d', display: 'flex', flexDirection: 'column' }}>
+                <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', color: '#8b949e', textTransform: 'uppercase' }}>Vision Model Engine</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, justifyContent: 'center' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                    <span style={{color: '#8b949e'}}>Buffer Size</span>
+                    <span style={{fontWeight: 'bold'}}>75 Frames (~15s)</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                    <span style={{color: '#8b949e'}}>Temporal Weight</span>
+                    <span style={{fontWeight: 'bold', fontFamily: 'monospace', color: '#00BFFF'}}>W = index²</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                    <span style={{color: '#8b949e'}}>Ratio Math</span>
+                    <span style={{fontWeight: 'bold', fontFamily: 'monospace'}}>(W_sleep / W_tot)^0.7</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                    <span style={{color: '#8b949e'}}>Micro-sleep Penalty</span>
+                    <span style={{fontWeight: 'bold', fontFamily: 'monospace', color: '#ffaa00'}}>12×(Consec_F)^1.6</span>
+                  </div>
+                  
+                  {/* Visual Ratio Bar */}
+                  <div style={{ width: '100%', height: '8px', background: '#21262d', borderRadius: '4px', overflow: 'hidden', marginTop: '6px' }}>
+                    <div style={{ width: `${telemetry.drowsinessRisk}%`, height: '100%', background: telemetry.drowsinessRisk > 50 ? '#ffaa00' : '#00BFFF', transition: 'width 0.3s' }} />
+                  </div>
+                  <div style={{ textAlign: 'center', fontSize: '10px', color: '#8b949e', marginTop: '2px'}}>Sleep Ratio Dominance</div>
                 </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                  <span style={{color: '#8b949e'}}>Drowsy Frame Weight</span>
-                  <span style={{fontWeight: 'bold', color: '#ffaa00'}}>Quadratic (x²)</span>
-                </div>
-                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
-                  <span style={{color: '#8b949e'}}>Consecutive Penalty</span>
-                  <span style={{fontWeight: 'bold', color: '#ff4444'}}>Active</span>
-                </div>
-                
-                {/* Visual Ratio Bar */}
-                <div style={{ width: '100%', height: '8px', background: '#21262d', borderRadius: '4px', overflow: 'hidden', marginTop: '10px' }}>
-                  <div style={{ width: `${telemetry.drowsinessRisk}%`, height: '100%', background: telemetry.drowsinessRisk > 50 ? '#ffaa00' : '#00BFFF', transition: 'width 0.3s' }} />
-                </div>
-                <div style={{ textAlign: 'center', fontSize: '10px', color: '#8b949e', marginTop: '2px'}}>Sleep Ratio vs Active Ratio</div>
               </div>
+
+              {/* Event Log Container */}
+              <div style={{ flex: 1, background: '#161b22', padding: '15px', borderRadius: '12px', border: '1px solid #30363d', display: 'flex', flexDirection: 'column' }}>
+                <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', color: '#8b949e' }}>RECENT EVENTS</h3>
+                <div style={{ flex: 1, overflowY: 'hidden', display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                  {eventLogs.length === 0 ? (
+                    <div style={{ fontSize: '12px', color: '#444' }}>No events logged yet...</div>
+                  ) : (
+                    eventLogs.map((log, i) => (
+                      <div key={i} style={{ fontSize: '11px', display: 'flex', gap: '8px', opacity: 1 - (i * 0.15) }}>
+                        <span style={{ color: '#8b949e', minWidth: '60px' }}>[{log.time}]</span>
+                        <span style={{ 
+                          color: log.type === 'error' ? '#ff4444' : log.type === 'warning' ? '#ffaa00' : log.type === 'success' ? '#00BFFF' : '#e6edf3'
+                        }}>{log.msg}</span>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
             </div>
 
-            {/* Event Log Container */}
-            <div style={{ flex: 1.5, background: '#161b22', padding: '15px', borderRadius: '12px', border: '1px solid #30363d', display: 'flex', flexDirection: 'column' }}>
-              <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', color: '#8b949e' }}>RECENT EVENTS</h3>
-              <div style={{ flex: 1, overflowY: 'hidden', display: 'flex', flexDirection: 'column', gap: '6px' }}>
-                {eventLogs.length === 0 ? (
-                  <div style={{ fontSize: '12px', color: '#444' }}>No events logged yet...</div>
-                ) : (
-                  eventLogs.map((log, i) => (
-                    <div key={i} style={{ fontSize: '11px', display: 'flex', gap: '8px', opacity: 1 - (i * 0.15) }}>
-                      <span style={{ color: '#8b949e', minWidth: '60px' }}>[{log.time}]</span>
-                      <span style={{ 
-                        color: log.type === 'error' ? '#ff4444' : log.type === 'warning' ? '#ffaa00' : log.type === 'success' ? '#00BFFF' : '#e6edf3'
-                      }}>{log.msg}</span>
-                    </div>
-                  ))
-                )}
+            {/* ROW 2: Kinematics & Synthesis */}
+            <div style={{ display: 'flex', gap: '15px', flex: 1 }}>
+              
+              {/* Kinematics Pipeline */}
+              <div style={{ flex: 1, background: '#161b22', padding: '15px', borderRadius: '12px', border: '1px solid #30363d', display: 'flex', flexDirection: 'column' }}>
+                <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', color: '#8b949e', textTransform: 'uppercase' }}>IMU Sensor Pipeline</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, justifyContent: 'center' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                    <span style={{color: '#8b949e'}}>Signal Window</span>
+                    <span style={{fontWeight: 'bold'}}>50 Samples</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                    <span style={{color: '#8b949e'}}>Accel Multiplier</span>
+                    <span style={{fontWeight: 'bold', color: '#00BFFF'}}>9.0x Boost</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                    <span style={{color: '#8b949e'}}>Gyro Deadzone</span>
+                    <span style={{fontWeight: 'bold'}}>±0.03 rad/s</span>
+                  </div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '12px' }}>
+                    <span style={{color: '#8b949e'}}>Extracted Feats.</span>
+                    <span style={{fontWeight: 'bold', fontSize: '10px', color: '#8b949e', textAlign: 'right'}}>Mean, Std, Max,<br/>Min, Jerk, IQR</span>
+                  </div>
+                </div>
               </div>
-            </div>
 
+              {/* Risk Synthesis Calculation */}
+              <div style={{ flex: 1, background: '#161b22', padding: '15px', borderRadius: '12px', border: '1px solid #30363d', display: 'flex', flexDirection: 'column' }}>
+                <h3 style={{ margin: '0 0 10px 0', fontSize: '13px', color: '#8b949e', textTransform: 'uppercase' }}>Risk Synthesis</h3>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '6px', flex: 1, justifyContent: 'center' }}>
+                  <div style={{ fontSize: '11px', color: '#8b949e', marginBottom: '4px' }}>
+                    Telemetry merging vision & motion data to compute the drowsy and global risk.
+                  </div>
+                  <div style={{ background: '#0d1117', padding: '8px', borderRadius: '6px', border: '1px solid #21262d', fontFamily: 'monospace', fontSize: '11px', color: '#e6edf3' }}>
+                    <span style={{color: '#ffaa00'}}>Risk_Drowsy</span> = MAX(Ratio, Pen)
+                  </div>
+                  <div style={{ background: '#0d1117', padding: '8px', borderRadius: '6px', border: '1px solid #21262d', fontFamily: 'monospace', fontSize: '11px', color: '#e6edf3' }}>
+                    <span style={{color: '#ff4444'}}>Risk_Global</span> = Drowsy + IMU_Pen
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginTop: '4px' }}>
+                    <div style={{ width: '8px', height: '8px', borderRadius: '50%', background: isAlarmActive ? '#ff4444' : '#00BFFF', boxShadow: `0 0 8px ${isAlarmActive ? '#ff4444' : '#00BFFF'}` }}></div>
+                    <span style={{ fontSize: '12px', fontWeight: 'bold', color: isAlarmActive ? '#ff4444' : '#00BFFF' }}>
+                      {isAlarmActive ? 'CRITICAL LIMIT MET' : 'SYSTEM NOMINAL'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+
+            </div>
           </div>
 
         </div>
