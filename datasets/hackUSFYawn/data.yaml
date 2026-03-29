@@ -1,0 +1,13 @@
+train: ./train/images
+val: ./valid/images
+test: ./test/images
+
+nc: 3
+names: ['active', 'sleepy', 'yawn']
+
+roboflow:
+  workspace: yurals-pro
+  project: yawn_detection-lfslg
+  version: 2
+  license: CC BY 4.0
+  url: https://universe.roboflow.com/yurals-pro/yawn_detection-lfslg/dataset/2
