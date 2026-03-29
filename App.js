@@ -2,6 +2,7 @@ import { CameraView, useCameraPermissions } from "expo-camera";
 import { Gyroscope, Accelerometer } from "expo-sensors";
 import { useState, useEffect, useRef, useMemo } from "react";
 import {
+  AppState,
   Button,
   Dimensions,
   StyleSheet,
@@ -23,7 +24,7 @@ const SENSOR_UPDATE_INTERVAL_MS = 100;
 const SCORE_CALCULATION_WINDOW_S = 2;
 const WINDOW_SIZE =
   (SCORE_CALCULATION_WINDOW_S * 1000) / SENSOR_UPDATE_INTERVAL_MS;
-const CAMERA_FRAME_INTERVAL_MS = 1000;
+const CAMERA_FRAME_INTERVAL_MS = 200;
 
 const { width } = Dimensions.get("window");
 const AnimatedPath = Animated.createAnimatedComponent(Path);
@@ -52,10 +53,15 @@ const DrivingUI = () => {
   const [accelerometerData, setAccelerometerData] = useState({ x: 0, y: 0, z: 0 });
   const [riskScore, setRiskScore] = useState(0);
   const [modelPrediction, setModelPrediction] = useState("N/A");
+
   const [accelSafety, setAccelSafety] = useState("Normal");
   const [gyroSafety, setGyroSafety] = useState("Normal");
   const [isDarkMode, setIsDarkMode] = useState(true);
   const [displayValue, setDisplayValue] = useState(0);
+  const [drowsinessRisk, setDrowsinessRisk] = useState(0);
+  const [isFocused, setIsFocused] = useState(true); // Track if app is in foreground
+  const currentDrowsinessRisk = useRef(0); // Ref to access latest drowsiness inside intervals
+  const consecutiveSleepCount = useRef(0); // Track consecutive drowsy frames
 
   // --- REFS ---
   const isCameraReady = useRef(false);
@@ -63,6 +69,7 @@ const DrivingUI = () => {
   const cameraRef = useRef(null);
   const sensorWindow = useRef([]);
   const lastRiskScore = useRef(0);
+  const predictionHistory = useRef([]);
   const latestGyro = useRef({ x: 0, y: 0, z: 0 });
   const latestAccel = useRef({ x: 0, y: 0, z: 0 });
   const ws = useRef(null);
@@ -145,16 +152,68 @@ const DrivingUI = () => {
     ws.current.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type === "inference" && data.predictions?.length > 0) {
-          const { label, confidence } = data.predictions[0];
-          setModelPrediction(`${label} (${(confidence * 100).toFixed(1)}%)`);
-        } else if (data.type === "accel_inference") {
+        
+        // 1. Handle Driving Safety Labels (20% + 20% components)
+        if (data.type === "accel_inference") {
           setAccelSafety(data.label);
         } else if (data.type === "gyro_inference") {
           setGyroSafety(data.label);
         }
+        
+        // 2. Handle Drowsiness Inference (60% component)
+        else if (data.type === 'inference') {
+          let currentLabel = 'none';
+          if (data.predictions.length > 0) {
+            const { label, confidence } = data.predictions[0];
+            setModelPrediction(`${label} (${(confidence * 100).toFixed(1)}%)`);
+            currentLabel = String(label).toLowerCase().trim(); 
+          } else {
+            setModelPrediction('No detection');
+          }
+
+          // --- Consecutive Drowsiness Logic ---
+          const isDrowsyFrame = currentLabel.includes('sleep') || currentLabel.includes('yawn') || currentLabel === 'none' || currentLabel === '1' || currentLabel === '2';
+          if (isDrowsyFrame) {
+            consecutiveSleepCount.current += 1;
+          } else {
+            consecutiveSleepCount.current = 0; 
+          }
+
+          // --- Ratio-based Drowsiness Logic (Micro-sleeps) ---
+          predictionHistory.current.push(currentLabel);
+          if (predictionHistory.current.length > 75) { 
+            predictionHistory.current.shift();
+          }
+
+          // Weighting recent frames for faster risk drop-off
+          let sleepyWeight = 0;
+          let totalWeight = 0;
+          predictionHistory.current.forEach((l, index) => {
+            const weight = Math.pow(index + 1, 2); 
+            if (l.includes('sleep') || l.includes('yawn') || l === 'none' || l === '1' || l === '2') {
+              sleepyWeight += weight;
+              totalWeight += weight;
+            } else if (l.includes('active') || l === '0') {
+              totalWeight += weight;
+            }
+          });
+          
+          const ratio = totalWeight > 0 ? sleepyWeight / totalWeight : 0;
+          const ratioRisk = Math.round(Math.pow(ratio, 0.7) * 100);
+
+          // Penalty for consecutive closed eyes
+          let consecutiveRisk = 0;
+          if (consecutiveSleepCount.current >= 2) {
+            consecutiveRisk = Math.min(100, Math.round(12 * Math.pow(consecutiveSleepCount.current, 1.6)));
+          }
+
+          // Final Drowsy portion of the risk
+          const finalDrowsyRisk = Math.max(ratioRisk, consecutiveRisk);
+          setDrowsinessRisk(finalDrowsyRisk);
+          currentDrowsinessRisk.current = finalDrowsyRisk;
+        }
       } catch (e) {
-        console.error(e);
+        console.error("Inference Error:", e);
       }
     };
 
@@ -178,20 +237,19 @@ const DrivingUI = () => {
     });
 
     cameraFrameIntervalRef.current = setInterval(async () => {
-      if (
-        cameraRef.current &&
-        isCameraReady.current &&
-        ws.current?.readyState === WebSocket.OPEN
-      ) {
+      if (isCapturing.current) return; // Prevent overwhelming the camera if it's still capturing the last frame
+
+      if (cameraRef.current && isCameraReady.current && ws.current?.readyState === WebSocket.OPEN) {
+        isCapturing.current = true;
         try {
-          const photo = await cameraRef.current.takePictureAsync({
-            quality: 0.3,
-          });
+          const photo = await cameraRef.current.takePictureAsync({ base64: false, quality: 0.6 }); // Bump quality so YOLO can clearly see the mouth
           const response = await fetch(photo.uri);
           const buffer = await response.arrayBuffer();
-          ws.current.send(buffer);
-        } catch (e) {
-          console.error(e);
+          ws.current.send(buffer); // Send pure ArrayBuffer to avoid JSON stringification of RN Blobs
+        } catch (error) {
+          // Suppress the initial "camera not ready" error that happens on app startup
+        } finally {
+          isCapturing.current = false;
         }
       }
     }, CAMERA_FRAME_INTERVAL_MS);
@@ -201,15 +259,16 @@ const DrivingUI = () => {
         gyro: latestGyro.current,
         accel: latestAccel.current,
       });
-      if (sensorWindow.current.length >= WINDOW_SIZE) {
-        const newRiskScore = calculateRiskScore(
-          sensorWindow.current,
-          lastRiskScore.current,
-          SENSOR_UPDATE_INTERVAL_MS / 1000,
-        );
+
+      // Keep the window at the correct size (sliding window)
+      if (sensorWindow.current.length > WINDOW_SIZE) {
+        sensorWindow.current.shift();
+      }
+
+      if (sensorWindow.current.length === WINDOW_SIZE) {
+        const newRiskScore = calculateRiskScore(sensorWindow.current, lastRiskScore.current, currentDrowsinessRisk.current, SENSOR_UPDATE_INTERVAL_MS / 1000);
         setRiskScore(newRiskScore);
         lastRiskScore.current = newRiskScore;
-        sensorWindow.current = [];
       }
     }, SENSOR_UPDATE_INTERVAL_MS);
 
@@ -218,6 +277,7 @@ const DrivingUI = () => {
       if (ws.current) ws.current.close();
       gyroSubscription.remove();
       accelSubscription.remove();
+      appStateSubscription.remove();
       clearInterval(processingInterval);
       if (cameraFrameIntervalRef.current)
         clearInterval(cameraFrameIntervalRef.current);
@@ -234,12 +294,15 @@ const DrivingUI = () => {
     );
   }
 
+  
+
   return (
     <View style={[styles.screen, { backgroundColor: theme.background }]}>
       {DEVMODE && (
         <View style={styles.sensorContainer}>
           <Text style={styles.riskScoreText}>Risk Score: {riskScore}</Text>
           <Text style={styles.sensorText}>Status: {modelPrediction}</Text>
+          <Text style={styles.riskScoreText}>Drowsiness Risk: {drowsinessRisk}</Text>
           <Text style={styles.sensorText}>
             Accel: {accelSafety} | Gyro: {gyroSafety}
           </Text>
