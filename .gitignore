@@ -42,3 +42,6 @@ yarn-error.*
 
 # VSCode files
 .vscode/
+
+# Model files
+*.pkl
